@@ -16,6 +16,7 @@ filetype plugin indent on
 
 " General Settings
 colorscheme jellybeans      " JellyBeans colorscheme
+syntax on                   " Enable syntax highlighting
 set hls                     " Highlight search
 set number                  " Show line numbers
 set fo=tcq                  " FormatOption - (textwidth, comments, allow gq)
@@ -26,7 +27,6 @@ set ai                      " AutoIndenting
 set wrapmargin=2            " WrapMargin wraps text before reaching 2 columns away from window border
 set ruler                   " Show cursor position (lower left side)
 set tildeop                 " ~ behaves like and operator
-set expandtab               " Use correct number of spaces on tabbing with > <
 set visualbell
 set shell=/bin/bash         " Which shell will be used on shell command
 set showcmd                 " Show commands on the last line
@@ -40,9 +40,9 @@ set termencoding=utf-8      " Terminal encoding
 set laststatus=2            " When the last window will have a status line
 set noswapfile              " Do not create .sw* files
 set smartcase               " Case insensitive search for lower case characters
-syntax on                   " Enable syntax highlighting
 let mapleader=' '           " Set which key is the map leader
 set t_Co=256                " Use 256 colors
+highlight ColorColumn ctermbg=235 guibg=#2c2d27
 
 " Highlight trailling whitespaces
 set list listchars=tab:\|_,trail:$
@@ -92,3 +92,4 @@ nnoremap <F9> :GundoToggle<CR>
 
 " Enable sudow
 cnoremap sudow w !sudo tee % >/dev/null
+set expandtab               " Use correct number of spaces on tabbing with > <
