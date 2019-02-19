@@ -3,20 +3,21 @@ set nocompatible
 filetype off
 set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()
-Plugin 'wakatime/vim-wakatime'
 Plugin 'git://github.com/gmarik/Vundle.vim.git'
 Plugin 'git://github.com/terryma/vim-multiple-cursors'
 Plugin 'git://github.com/itchyny/lightline.vim'
-Plugin 'git://github.com/sjl/gundo.vim.git'
-Plugin 'git://github.com/kevinw/pyflakes-vim.git'
+Plugin 'git://github.com/mbbill/undotree.git'
+Plugin 'git://github.com/nvie/vim-flake8'
+Plugin 'git://github.com/wakatime/vim-wakatime'
 Plugin 'git://github.com/mxw/vim-jsx.git'
 Plugin 'git://github.com/nanotech/jellybeans.vim.git'
+Plugin 'git://github.com/vim-syntastic/syntastic.git'
 call vundle#end()
 filetype plugin indent on
 
 " General Settings
 colorscheme jellybeans      " JellyBeans colorscheme
-syntax on                   " Enable syntax highlighting
+set smartcase               " Case insensitive search for lower case characters
 set hls                     " Highlight search
 set number                  " Show line numbers
 set fo=tcq                  " FormatOption - (textwidth, comments, allow gq)
@@ -27,7 +28,8 @@ set ai                      " AutoIndenting
 set wrapmargin=2            " WrapMargin wraps text before reaching 2 columns away from window border
 set ruler                   " Show cursor position (lower left side)
 set tildeop                 " ~ behaves like and operator
-set visualbell
+set expandtab               " Use correct number of spaces on tabbing with > <
+set visualbell              " Do not beep (bell) when an error occurs
 set shell=/bin/bash         " Which shell will be used on shell command
 set showcmd                 " Show commands on the last line
 set textwidth=79            " Wrap text in 79 columns
@@ -37,12 +39,11 @@ set incsearch               " Show where a matched pattern is
 set title                   " Show file that is been edited
 set encoding=utf-8          " Encoding
 set termencoding=utf-8      " Terminal encoding
-set laststatus=2            " When the last window will have a status line
-set noswapfile              " Do not create .sw* files
-set smartcase               " Case insensitive search for lower case characters
+set laststatus=2            " Always display status line
+set noswapfile              " No swp file
+syntax on                   " Enable syntax highlighting
 let mapleader=' '           " Set which key is the map leader
 set t_Co=256                " Use 256 colors
-highlight ColorColumn ctermbg=235 guibg=#2c2d27
 
 " Highlight trailling whitespaces
 set list listchars=tab:\|_,trail:$
@@ -53,7 +54,7 @@ highlight clear SpellBad
 highlight link SpellBad ErrorMsg
 
 " Remove trailling whitespaces when saving
-autocmd BufWritePre *.* :%s/\s\+$//e
+" autocmd BufWritePre *.* :%s/\s\+$//e
 
 " Makefile (tabs only)
 autocmd BufEnter {Makefile,makefile}* set noexpandtab
@@ -63,33 +64,79 @@ autocmd BufEnter {Makefile,makefile}* set nolist
 autocmd BufEnter psql.edit* set syntax=sql
 autocmd BufEnter psql.edit* set nolist
 
-" 4 Spaced -> Python, HonScript
-autocmd BufEnter *.{py,hon} set sts=4
-autocmd BufEnter *.{py,hon} set ts=4
-autocmd BufEnter *.{py,hon} set sw=4
+" CSS
+autocmd BufEnter *.css* set sts=2
+autocmd BufEnter *.css* set ts=2
+autocmd BufEnter *.css* set sw=2
+autocmd BufEnter *.css* set wrap
 
-" 2 Spaced -> JavaScript, CSS, Less, Sass, HTML, Handlebars
-autocmd BufEnter *.{js*,css,less,sass,s?html*,hbs} set sts=2
-autocmd BufEnter *.{js*,css,less,sass,s?html*,hbs} set ts=2
-autocmd BufEnter *.{js*,css,less,sass,s?html*,hbs} set sw=2
+" LESS
+autocmd BufEnter *.less* set syntax=css
+autocmd BufEnter *.less* set sts=2
+autocmd BufEnter *.less* set ts=2
+autocmd BufEnter *.less* set sw=2
+autocmd BufEnter *.less* set wrap
 
-" TextWrap, with 79 limit -> Python JavaScript, CSS, Less, Sass
-autocmd BufEnter *.{py,js*,css,less,sass} set wrap
-autocmd BufEnter *.{py,js*,css,less,sass} set textwidth=79
+" SASS
+autocmd BufEnter *.scss* set syntax=css
+autocmd BufEnter *.scss* set sts=2
+autocmd BufEnter *.scss* set ts=2
+autocmd BufEnter *.scss* set sw=2
+autocmd BufEnter *.scss* set wrap
 
-" NoTextWrap, without 79 limit -> HTML, Handlebars, HonScript
-autocmd BufEnter *.{s?html*,hbs,hon} set nowrap
-autocmd BufEnter *.{s?html*,hbs,hon} set textwidth=0
+" JSON
+autocmd BufEnter *.json set sts=2
+autocmd BufEnter *.json set ts=2
+autocmd BufEnter *.json set sw=2
+autocmd BufEnter *.json set wrap
 
-" CSS Syntax -> Less, Sass
-autocmd BufEnter *.{less,sass} set syntax=css
+" Javascript
+autocmd BufEnter *.js set sts=2
+autocmd BufEnter *.js set ts=2
+autocmd BufEnter *.js set sw=2
+autocmd BufEnter *.js set wrap
 
-" Shell Syntax -> HonScript
-autocmd BufEnter *.hon set syntax=sh
+" Javascript
+autocmd BufEnter *.jsx set sts=2
+autocmd BufEnter *.jsx set ts=2
+autocmd BufEnter *.jsx set sw=2
+autocmd BufEnter *.jsx set wrap
 
-" Gundo Mapping
-nnoremap <F9> :GundoToggle<CR>
+" HTML
+autocmd BufEnter *.html* set sts=2
+autocmd BufEnter *.html* set ts=2
+autocmd BufEnter *.html* set sw=2
+autocmd BufEnter *.html* set nowrap
+
+" SHTML
+autocmd BufEnter *.shtml* set sts=2
+autocmd BufEnter *.shtml* set ts=2
+autocmd BufEnter *.shtml* set sw=2
+autocmd BufEnter *.shtml* set nowrap
+
+" Handlebars
+autocmd BufEnter *.hbs* set syntax=html
+autocmd BufEnter *.hbs* set sts=2
+autocmd BufEnter *.hbs* set ts=2
+autocmd BufEnter *.hbs* set sw=2
+autocmd BufEnter *.hbs* set nowrap
+
+" Undotree Mapping
+nnoremap <F9> :UndotreeToggle<CR>
 
 " Enable sudow
 cnoremap sudow w !sudo tee % >/dev/null
-set expandtab               " Use correct number of spaces on tabbing with > <
+
+set statusline+=%#warningmsg#
+set statusline+=%{SyntasticStatuslineFlag()}
+set statusline+=%*
+
+let g:syntastic_always_populate_loc_list = 1
+let g:syntastic_auto_loc_list = 1
+let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_wq = 0
+
+let g:syntastic_python_checkers = ['pyflakes']
+
+" Custom Commands
+:command Tabs set autoindent noexpandtab tabstop=2 shiftwidth=2
