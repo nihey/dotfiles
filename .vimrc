@@ -54,7 +54,7 @@ highlight clear SpellBad
 highlight link SpellBad ErrorMsg
 
 " Remove trailling whitespaces when saving
-" autocmd BufWritePre *.* :%s/\s\+$//e
+autocmd BufWritePre *.* :%s/\s\+$//e
 
 " Makefile (tabs only)
 autocmd BufEnter {Makefile,makefile}* set noexpandtab
