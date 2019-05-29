@@ -11,7 +11,7 @@ Plugin 'git://github.com/nvie/vim-flake8'
 Plugin 'git://github.com/wakatime/vim-wakatime'
 Plugin 'git://github.com/mxw/vim-jsx.git'
 Plugin 'git://github.com/nanotech/jellybeans.vim.git'
-Plugin 'git://github.com/vim-syntastic/syntastic.git'
+Plugin 'git://github.com/w0rp/ale.git'
 call vundle#end()
 filetype plugin indent on
 
@@ -97,6 +97,7 @@ autocmd BufEnter *.js set sw=2
 autocmd BufEnter *.js set wrap
 
 " Javascript
+autocmd BufEnter *.jsx set syntax=javascript
 autocmd BufEnter *.jsx set sts=2
 autocmd BufEnter *.jsx set ts=2
 autocmd BufEnter *.jsx set sw=2
@@ -109,6 +110,7 @@ autocmd BufEnter *.html* set sw=2
 autocmd BufEnter *.html* set nowrap
 
 " SHTML
+autocmd BufEnter *.shtml* set syntax=html
 autocmd BufEnter *.shtml* set sts=2
 autocmd BufEnter *.shtml* set ts=2
 autocmd BufEnter *.shtml* set sw=2
@@ -127,16 +129,28 @@ nnoremap <F9> :UndotreeToggle<CR>
 " Enable sudow
 cnoremap sudow w !sudo tee % >/dev/null
 
-set statusline+=%#warningmsg#
-set statusline+=%{SyntasticStatuslineFlag()}
-set statusline+=%*
+" Ale / Linting
+" Undotree Mapping
+nnoremap <F2> :cnext<CR>
 
-let g:syntastic_always_populate_loc_list = 1
-let g:syntastic_auto_loc_list = 1
-let g:syntastic_check_on_open = 1
-let g:syntastic_check_on_wq = 0
+set statusline=%{LinterStatus()}
+let g:ale_echo_msg_error_str = 'E'
+let g:ale_echo_msg_warning_str = 'W'
+let g:ale_echo_msg_format = '[%linter%] %s [%severity%]'
+let g:ale_set_loclist = 0
+let g:ale_set_quickfix = 1
+let g:ale_open_list = 1
+let g:ale_fix_on_save = 1
 
-let g:syntastic_python_checkers = ['pyflakes']
+let g:ale_fixers = {
+\   '*': ['remove_trailing_lines', 'trim_whitespace'],
+\   'javascript': ['eslint'],
+\}
+
+let g:ale_linters = {
+\   'javascript': ['eslint'],
+\   'python': ['pyflakes'],
+\}
 
 " Custom Commands
 :command Tabs set autoindent noexpandtab tabstop=2 shiftwidth=2
