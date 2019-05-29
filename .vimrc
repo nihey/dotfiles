@@ -12,6 +12,8 @@ Plugin 'git://github.com/wakatime/vim-wakatime'
 Plugin 'git://github.com/mxw/vim-jsx.git'
 Plugin 'git://github.com/nanotech/jellybeans.vim.git'
 Plugin 'git://github.com/w0rp/ale.git'
+Plugin 'git://github.com/ctrlpvim/ctrlp.vim.git'
+Plugin 'git://github.com/yegappan/grep.git'
 call vundle#end()
 filetype plugin indent on
 
@@ -44,6 +46,10 @@ set noswapfile              " No swp file
 syntax on                   " Enable syntax highlighting
 let mapleader=' '           " Set which key is the map leader
 set t_Co=256                " Use 256 colors
+
+" Set Leader
+let mapleader = ','
+let g:mapleader = ','
 
 " Highlight trailling whitespaces
 set list listchars=tab:\|_,trail:$
@@ -151,6 +157,32 @@ let g:ale_linters = {
 \   'javascript': ['eslint'],
 \   'python': ['pyflakes'],
 \}
+
+" Grep
+let g:Grep_Skip_Files='*.bak *~ *.pyc *.o *.obj *.uitest .noseids nosetests.xml'
+let g:Grep_Skip_Dirs='.bzr .git .hg .vimprj .repo venv node_modules dist build __pycache__ wine-prefix build *.egg-info'
+
+nnoremap <silent> <Leader>gg :Grep<CR>
+nnoremap <silent> <Leader>gr :Rgrep<CR>
+nnoremap <silent> <Leader>ge :Egrep<CR>
+nnoremap <silent> <Leader>gb :Bgrep<CR>
+nnoremap <silent> <Leader>gf :Fgrep<CR>
+
+" Ctrlp
+let g:ctrlp_map = '<c-o>'
+let g:ctrlp_match_window_bottom = 0
+let g:ctrlp_match_window_reversed = 0
+let g:ctrlp_max_files = 40000
+let g:ctrlp_working_path_mode = 0
+let g:ctrlp_switch_buffer = 1
+
+nmap <C-F7> :CtrlPClearCache<CR>
+
+" Wildmenu options
+set wildmenu
+set wildmode=list:longest,full
+set wildignore=*~,*.swp,*.o,*.obj,*.pyc,*.min.js
+set wildignore+=*/.git/*,*/.hg/*,*/.svn/*,*/.repo/*,*/.vimprj/*,*/node_modules/*,*/dist/*,*/venv/*,*/__pycache__/*,*/wine-prefix/*,*/build/*,*/*-egg-info/*
 
 " Custom Commands
 :command Tabs set autoindent noexpandtab tabstop=2 shiftwidth=2
