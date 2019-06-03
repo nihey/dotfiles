@@ -138,6 +138,7 @@ cnoremap sudow w !sudo tee % >/dev/null
 " Ale / Linting
 " Undotree Mapping
 nnoremap <F2> :cnext<CR>
+nnoremap <F3> :cprevious<CR>
 
 set statusline=%{LinterStatus()}
 let g:ale_echo_msg_error_str = 'E'
@@ -145,7 +146,6 @@ let g:ale_echo_msg_warning_str = 'W'
 let g:ale_echo_msg_format = '[%linter%] %s [%severity%]'
 let g:ale_set_loclist = 0
 let g:ale_set_quickfix = 1
-let g:ale_open_list = 1
 let g:ale_fix_on_save = 1
 
 let g:ale_fixers = {
