@@ -3,17 +3,19 @@ set nocompatible
 filetype off
 set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()
-Plugin 'git://github.com/gmarik/Vundle.vim.git'
-Plugin 'git://github.com/terryma/vim-multiple-cursors'
-Plugin 'git://github.com/itchyny/lightline.vim'
-Plugin 'git://github.com/mbbill/undotree.git'
-Plugin 'git://github.com/nvie/vim-flake8'
-Plugin 'git://github.com/wakatime/vim-wakatime'
-Plugin 'git://github.com/mxw/vim-jsx.git'
-Plugin 'git://github.com/nanotech/jellybeans.vim.git'
-Plugin 'git://github.com/w0rp/ale.git'
-Plugin 'git://github.com/ctrlpvim/ctrlp.vim.git'
-Plugin 'git://github.com/yegappan/grep.git'
+Plugin 'gmarik/Vundle.vim.git'
+Plugin 'terryma/vim-multiple-cursors'
+Plugin 'itchyny/lightline.vim'
+Plugin 'mbbill/undotree.git'
+Plugin 'nvie/vim-flake8'
+Plugin 'wakatime/vim-wakatime'
+Plugin 'mxw/vim-jsx.git'
+Plugin 'nanotech/jellybeans.vim.git'
+Plugin 'w0rp/ale.git'
+Plugin 'ctrlpvim/ctrlp.vim.git'
+Plugin 'yegappan/grep.git'
+Plugin 'leafgarland/typescript-vim'
+Plugin 'peitalin/vim-jsx-typescript'
 call vundle#end()
 filetype plugin indent on
 
@@ -109,6 +111,27 @@ autocmd BufEnter *.jsx set ts=2
 autocmd BufEnter *.jsx set sw=2
 autocmd BufEnter *.jsx set wrap
 
+" MDX
+autocmd BufEnter *.mdx set syntax=javascript
+autocmd BufEnter *.mdx set sts=2
+autocmd BufEnter *.mdx set ts=2
+autocmd BufEnter *.mdx set sw=2
+autocmd BufEnter *.mdx set wrap
+
+" Typescript
+autocmd BufEnter *.ts set syntax=typescript
+autocmd BufEnter *.ts set sts=2
+autocmd BufEnter *.ts set ts=2
+autocmd BufEnter *.ts set sw=2
+autocmd BufEnter *.ts set wrap
+
+" Typescript + React
+autocmd BufEnter *.tsx set syntax=typescript
+autocmd BufEnter *.tsx set sts=2
+autocmd BufEnter *.tsx set ts=2
+autocmd BufEnter *.tsx set sw=2
+autocmd BufEnter *.tsx set wrap
+
 " HTML
 autocmd BufEnter *.html* set sts=2
 autocmd BufEnter *.html* set ts=2
@@ -150,11 +173,13 @@ let g:ale_fix_on_save = 1
 
 let g:ale_fixers = {
 \   '*': ['remove_trailing_lines', 'trim_whitespace'],
-\   'javascript': ['eslint'],
+\   'javascript': ['prettier', 'eslint'],
+\   'typescript': ['prettier', 'tslint'],
 \}
 
 let g:ale_linters = {
-\   'javascript': ['eslint'],
+\   'javascript': ['prettier', 'eslint'],
+\   'typescript': ['prettier', 'tslint'],
 \   'python': ['pyflakes'],
 \}
 
