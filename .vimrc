@@ -207,7 +207,7 @@ nmap <C-F7> :CtrlPClearCache<CR>
 set wildmenu
 set wildmode=list:longest,full
 set wildignore=*~,*.swp,*.o,*.obj,*.pyc,*.min.js
-set wildignore+=*/.git/*,*/.hg/*,*/.svn/*,*/.repo/*,*/.vimprj/*,*/node_modules/*,*/dist/*,*/venv/*,*/__pycache__/*,*/wine-prefix/*,*/build/*,*/*-egg-info/*
+set wildignore+=*/.git/*,*/.hg/*,*/.svn/*,*/.repo/*,*/.vimprj/*,*/node_modules/*,*/dist/*,*/venv/*,*/__pycache__/*,*/wine-prefix/*,*/build/*,*/*-egg-info/*,*/env/*,*/venv/*
 
 " Custom Commands
 :command Tabs set autoindent noexpandtab tabstop=2 shiftwidth=2
