@@ -180,7 +180,7 @@ let g:ale_fixers = {
 let g:ale_linters = {
 \   'javascript': ['prettier', 'eslint'],
 \   'typescript': ['prettier', 'tslint'],
-\   'python': ['pyflakes'],
+\   'python': ['flake8'],
 \}
 
 " Grep
