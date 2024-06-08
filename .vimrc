@@ -1,22 +1,21 @@
 " Vundle setup
 set nocompatible
 filetype off
-set rtp+=~/.vim/bundle/Vundle.vim
-call vundle#begin()
-Plugin 'gmarik/Vundle.vim.git'
-Plugin 'terryma/vim-multiple-cursors'
-Plugin 'itchyny/lightline.vim'
-Plugin 'mbbill/undotree.git'
-Plugin 'nvie/vim-flake8'
-Plugin 'wakatime/vim-wakatime'
-Plugin 'mxw/vim-jsx.git'
-Plugin 'nanotech/jellybeans.vim.git'
-Plugin 'w0rp/ale.git'
-Plugin 'ctrlpvim/ctrlp.vim.git'
-Plugin 'yegappan/grep.git'
-Plugin 'leafgarland/typescript-vim'
-Plugin 'peitalin/vim-jsx-typescript'
-call vundle#end()
+set rtp+=~/.vim/bundle/vundle/
+call vundle#rc()
+Bundle 'gmarik/Vundle.vim.git'
+Bundle 'terryma/vim-multiple-cursors'
+Bundle 'itchyny/lightline.vim'
+Bundle 'mbbill/undotree.git'
+Bundle 'nvie/vim-flake8'
+Bundle 'wakatime/vim-wakatime'
+Bundle 'sheerun/vim-polyglot'
+Bundle 'nanotech/jellybeans.vim.git'
+Bundle 'w0rp/ale.git'
+Bundle 'ctrlpvim/ctrlp.vim.git'
+Bundle 'yegappan/grep.git'
+Bundle 'leafgarland/typescript-vim'
+Bundle 'peitalin/vim-jsx-typescript'
 filetype plugin indent on
 
 " General Settings
@@ -173,14 +172,19 @@ let g:ale_fix_on_save = 1
 
 let g:ale_fixers = {
 \   '*': ['remove_trailing_lines', 'trim_whitespace'],
-\   'javascript': ['prettier', 'eslint'],
-\   'typescript': ['prettier', 'tslint'],
+\   'javascript': ['eslint'],
+\   'typescript': ['prettier', 'eslint'],
 \}
 
 let g:ale_linters = {
-\   'javascript': ['prettier', 'eslint'],
-\   'typescript': ['prettier', 'tslint'],
+\   'javascript': ['eslint'],
+\   'typescript': ['prettier', 'eslint'],
 \   'python': ['flake8'],
+\}
+
+let g:ale_linter_aliases = {'typescriptreact': 'typescript'}
+let g:ale_pattern_options = {
+\   '.*\.gql$': {'ale_enabled': 0},
 \}
 
 " Grep
