@@ -5,6 +5,11 @@ fish_add_path ~/anaconda3/bin/
 
 if status is-interactive
     # Commands to run in interactive sessions can go here
+
+    # PostgreSQL 17 aliases
+    alias createdb="createdb-17"
+    alias psql="psql-17"
+    alias createuser="createuser-17"
 end
 
 function dotenv --description 'Load environment variables from .env file'
@@ -26,7 +31,13 @@ end
 
 set -x RESOLVE_HOME ~/devel/resolve
 
-alias copy "xclip -selection clipboard"
+function copy
+    if command -q pbcopy
+        pbcopy $argv
+    else
+        xclip -selection clipboard $argv
+    end
+end
 
 function ll
     ls -lah $argv
@@ -62,7 +73,14 @@ alias ris render-intro-screenshot
 alias rw render-worker
 
 alias open-screenshot "open $SWIC_RENDERER_SCREENSHOT_PATH"
-alias ops "open $SWIC_RENDERER_SCREENSHOT_PATH ; xclip -selection clipboard -t image/png -i $SWIC_RENDERER_SCREENSHOT_PATH"
+function ops
+    open $SWIC_RENDERER_SCREENSHOT_PATH
+    if command -q pbcopy
+        pbcopy < $SWIC_RENDERER_SCREENSHOT_PATH
+    else
+        xclip -selection clipboard -t image/png -i $SWIC_RENDERER_SCREENSHOT_PATH
+    end
+end
 
 alias upload-to-linode "node ~/devel/sxic-renderer/bin/upload-file-to-linode.js"
 alias utl upload-to-linode
