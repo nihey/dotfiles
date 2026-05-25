@@ -15,6 +15,8 @@ like conda / gcloud) and lives outside this repo.
   the git repo root.
 - `conf.d/nvm-lazy.fish` — adds the nvm "default" node to `PATH` without
   sourcing `nvm.sh` on startup. The OMF `nvm` function still works on demand.
+- `conf.d/cheats.fish` — `cheats` prints a colored cheatsheet of every
+  command defined here plus the machine-local layer.
 
 ## Install
 
