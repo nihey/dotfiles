@@ -31,7 +31,7 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     echo $H"  Filesystem & misc"$N$D" — utils.fish"$N
     __cheats_row "ll"            "ls -lah"
     __cheats_row "mkcd <dir>"    "mkdir -p && cd"
-    __cheats_row "copy"          "xclip -selection clipboard (pipe into it)"
+    __cheats_row "copy"          "system clipboard (pbcopy / xclip / wl-copy)"
     __cheats_row "dotenv [file]" "export vars from a .env file (handles quotes, comments, export)"
     __cheats_row "dytv <url>"    "yt-dlp, remuxed to mp4"
     __cheats_row "randstr [N=32]" "random alphanumeric string of length N"
@@ -51,6 +51,12 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     __cheats_row "gca"           "git commit --amend --no-edit"
     __cheats_row "gst / gstp"    "git stash  /  git stash pop"
     __cheats_row "gwip"          "add -A && commit -m wip --no-verify"
+    echo ""
+
+    echo $H"  PostgreSQL"$N$D" — pg.fish (interactive only, if *-17 installed)"$N
+    __cheats_row "psql"          "→ psql-17"
+    __cheats_row "createdb"      "→ createdb-17"
+    __cheats_row "createuser"    "→ createuser-17"
     echo ""
 
     echo $H"  Node / nvm"$N$D" — nvm-lazy.fish"$N

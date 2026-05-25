@@ -17,6 +17,9 @@ like conda / gcloud) and lives outside this repo.
   sourcing `nvm.sh` on startup. The OMF `nvm` function still works on demand.
 - `conf.d/cheats.fish` — `cheats` prints a colored cheatsheet of every
   command defined here plus the machine-local layer.
+- `conf.d/pg.fish` — interactive-only `psql` / `createdb` / `createuser`
+  shadows pointing at the `-17` binaries when present.
+- `conf.d/anaconda.fish` — adds `~/anaconda3/bin` to `PATH` if it exists.
 
 ## Install
 

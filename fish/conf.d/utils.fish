@@ -1,6 +1,17 @@
 # Generic shell utilities — safe to share across machines.
 
-alias copy "xclip -selection clipboard"
+function copy --description 'Copy stdin/args to the system clipboard'
+    if command -q pbcopy
+        pbcopy $argv
+    else if command -q xclip
+        xclip -selection clipboard $argv
+    else if command -q wl-copy
+        wl-copy $argv
+    else
+        echo "copy: no clipboard utility found (pbcopy/xclip/wl-copy)" >&2
+        return 1
+    end
+end
 
 function ll --description 'ls -lah'
     ls -lah $argv
