@@ -26,7 +26,9 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     __cheats_row "p [name]"      "cd into \$DEVEL_ROOT/<project> (fzf if ambiguous, tab-completes)"
     __cheats_row "dev [project]" "run ./dev.sh in cwd, or in a resolved project"
     __cheats_row "cdr"           "cd to the git repo root"
-    __cheats_row "cw"            "pick projects/presets → tiled tmux of claude --dangerously-skip-permissions"
+    __cheats_row "cw [name]"     "pick projects/presets → tiled tmux of claude (name = separate session)"
+    __cheats_row "cw ls"         "list tmux sessions"
+    __cheats_row "cw attach [s]" "attach to an existing tmux session (picker when no name)"
     echo ""
 
     echo $H"  Filesystem & misc"$N$D" — utils.fish"$N

@@ -224,11 +224,55 @@ function __cw_attach --description 'Attach or switch to a tmux session' --argume
 end
 
 # --- Main command ----------------------------------------------------------
+# Usage:
+#   cw                launch picker; session is "cw" (or the lone preset's name)
+#   cw <name>         same, but as a separate session called <name>
+#   cw ls             list tmux sessions
+#   cw attach [name]  attach to an existing session (picker when no name)
 function cw --description 'Pick projects/presets and launch claude in a tiled tmux window'
     if not type -q tmux
         echo "cw: tmux is not installed" >&2
         return 1
     end
+
+    set -l session_arg ""
+    switch "$argv[1]"
+        case ls list
+            tmux list-sessions 2>/dev/null
+            or echo "cw: no tmux sessions running" >&2
+            return
+        case attach a
+            set -l sessions (tmux list-sessions -F '#{session_name}' 2>/dev/null)
+            if test (count $sessions) -eq 0
+                echo "cw: no tmux sessions to attach to" >&2
+                return 1
+            end
+            set -l target "$argv[2]"
+            if test -z "$target"
+                if test (count $sessions) -eq 1
+                    set target $sessions[1]
+                else if type -q fzf
+                    set target (printf '%s\n' $sessions | fzf --height=40% --reverse \
+                        --prompt="cw attach> " --header="Enter to attach")
+                else
+                    set -l picked (__cw_menu $sessions)
+                    test (count $picked) -gt 0; and set target $picked[1]
+                end
+            end
+            if test -z "$target"
+                echo "cw: nothing selected" >&2
+                return 1
+            end
+            if not tmux has-session -t "$target" 2>/dev/null
+                echo "cw: no session named '$target'" >&2
+                return 1
+            end
+            __cw_attach $target
+            return
+        case '*'
+            set session_arg "$argv[1]"
+    end
+
     if not type -q claude
         echo "cw: claude CLI not found on PATH" >&2
         return 1
@@ -297,9 +341,12 @@ function cw --description 'Pick projects/presets and launch claude in a tiled tm
         return 1
     end
 
-    # Session name: a single lone preset pick gets its own name; else "cw".
+    # Session name: explicit arg wins; else a single lone preset pick gets
+    # its own name; else "cw".
     set -l session cw
-    if test (count $picks) -eq 1; and test (count $chosen_presets) -eq 1
+    if test -n "$session_arg"
+        set session $session_arg
+    else if test (count $picks) -eq 1; and test (count $chosen_presets) -eq 1
         set session $chosen_presets[1]
     end
 
