@@ -23,7 +23,15 @@ like conda / gcloud) and lives outside this repo.
 
 ## Install
 
-Symlink each module into `~/.config/fish/conf.d/`:
+Run the installer from the repo root:
+
+```sh
+./install.sh
+```
+
+It symlinks each module into `~/.config/fish/conf.d/`. Safe to re-run:
+`env.local.fish` is never touched, and existing regular files are skipped
+(only symlinks are replaced). Or do it manually:
 
 ```fish
 for f in ~/devel/dotfiles/fish/conf.d/*.fish

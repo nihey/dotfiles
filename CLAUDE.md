@@ -1,7 +1,8 @@
 # CLAUDE.md — dotfiles
 
 Personal dotfiles: a modular fish config (`fish/conf.d/*.fish`, each auto-loaded
-on shell startup), plus `.gitconfig`, `.vimrc`, and `setup.sh`. See
+on shell startup), plus `install.sh` (symlinks the fish modules into
+`~/.config/fish/conf.d/`) and `setup.sh` (server provisioning). See
 `fish/README.md` for the fish layout and install steps.
 
 ## Security — never commit secrets (audit every commit)
