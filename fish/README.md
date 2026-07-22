@@ -13,6 +13,10 @@ like conda / gcloud) and lives outside this repo.
 - `conf.d/projects.fish` — `p <name>` jumps to `$DEVEL_ROOT/<project>` (fzf
   fallback when ambiguous), `dev [project]` runs `./dev.sh`, `cdr` cd's to
   the git repo root.
+- `conf.d/proxy.fish` — `pchrome <ssh-host>` opens an SSH SOCKS tunnel and
+  launches a separate Chrome profile that browses through it (remote DNS, so
+  sites see the remote IP). Tunnel is torn down when Chrome exits; `--fresh`
+  uses a throwaway profile, `--port N` forces the local port.
 - `conf.d/nvm-lazy.fish` — adds the nvm "default" node to `PATH` without
   sourcing `nvm.sh` on startup. The OMF `nvm` function still works on demand.
 - `conf.d/cheats.fish` — `cheats` prints a colored cheatsheet of every

@@ -40,6 +40,11 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     __cheats_row "randstr [N=32]" "random alphanumeric string of length N"
     echo ""
 
+    echo $H"  Network"$N$D" — proxy.fish"$N
+    __cheats_row "pchrome <host>"  "ssh SOCKS tunnel + isolated Chrome browsing through it"
+    __cheats_row "pchrome --fresh" "same, but throwaway profile (deleted on exit)"
+    echo ""
+
     echo $H"  Git"$N$D" — git.fish"$N
     __cheats_row "g"             "git"
     __cheats_row "gs"            "git status -sb"
