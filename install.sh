@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Symlink the fish modules into ~/.config/fish/conf.d/.
+# Symlink the fish modules into ~/.config/fish/conf.d/ and bin/ executables
+# into ~/.local/bin/.
 #
 # Safe to re-run. Never touches env.local.fish (the untracked machine-local
 # layer holding secrets/env vars) and never overwrites a regular file — only
@@ -24,5 +25,24 @@ for src in "$DOTFILES_DIR"/fish/conf.d/*.fish; do
         continue
     fi
 
+    ln -sfv "$src" "$dest"
+done
+
+# Executables in bin/ → ~/.local/bin (already on PATH in this setup).
+BIN_DEST="${HOME}/.local/bin"
+mkdir -p "$BIN_DEST"
+for src in "$DOTFILES_DIR"/bin/*; do
+    [ -e "$src" ] || continue
+    [ -f "$src" ] || continue
+    name="$(basename "$src")"
+    case "$name" in
+        test_*|*.pyc|*.md) continue ;;
+    esac
+    dest="$BIN_DEST/$name"
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+        echo "skip: $dest exists and is not a symlink — leaving it alone"
+        continue
+    fi
+    chmod +x "$src"
     ln -sfv "$src" "$dest"
 done

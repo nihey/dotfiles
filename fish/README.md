@@ -9,7 +9,13 @@ like conda / gcloud) and lives outside this repo.
 
 - `conf.d/00-greeting.fish` — empty greeting.
 - `conf.d/utils.fish` — `ll`, `copy`, `mkcd`, `dytv`, `randstr`, `dotenv`.
-- `conf.d/git.fish` — common git aliases (`gs`, `gd`, `gco`, `gca`, `gl`, ...).
+- `conf.d/git.fish` — common git aliases (`gs`, `gd`, `gco`, `gca`, `gl`, ...),
+  plus `gprune` (delete already-merged local worktrees/branches and return to
+  main/master) and `gonly-main` (stash unique WIP, delete every other local
+  branch and worktree, leave only main/master). Both wrap
+  `bin/git-local-cleanup`. `gonly-main` asks you to type `only-main` unless
+  you pass `--yes`; unique commits are saved under
+  `refs/backup/local-reset/<timestamp>/` before the branch is deleted.
 - `conf.d/projects.fish` — `p <name>` jumps to `$DEVEL_ROOT/<project>` (fzf
   fallback when ambiguous), `dev [project]` runs `./dev.sh`, `cdr` cd's to
   the git repo root.
@@ -33,9 +39,10 @@ Run the installer from the repo root:
 ./install.sh
 ```
 
-It symlinks each module into `~/.config/fish/conf.d/`. Safe to re-run:
-`env.local.fish` is never touched, and existing regular files are skipped
-(only symlinks are replaced). Or do it manually:
+It symlinks each module into `~/.config/fish/conf.d/` and each `bin/`
+executable into `~/.local/bin/`. Safe to re-run: `env.local.fish` is never
+touched, and existing regular files are skipped (only symlinks are replaced).
+Or do it manually:
 
 ```fish
 for f in ~/devel/dotfiles/fish/conf.d/*.fish

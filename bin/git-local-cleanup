@@ -1,0 +1,851 @@
+#!/usr/bin/env python3
+"""Prune merged git leftovers, or reset a clone down to only the base branch.
+
+Commands:
+  classify     print worktree/branch merge status (no mutations besides fetch)
+  prune        remove merged worktrees/branches; checkout base if HEAD is merged
+  only-main    stash unique WIP, remove every other worktree/branch, leave base
+
+Merged means exact ancestry of origin/<base>, not squash-guessing.
+Unique uncommitted work is never discarded. only-main stores unique commits
+under refs/backup/local-reset/<timestamp>/ before deleting unmerged branches.
+
+Never force-pushes. Never deletes remote branches.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+class CleanupError(Exception):
+    """User-facing failure."""
+
+
+def run(
+    args: list[str],
+    cwd: str | None = None,
+    check: bool = True,
+    input_text: str | None = None,
+) -> str:
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+        input=input_text,
+    )
+    if check and result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise CleanupError(detail or f'command failed: {" ".join(args)}')
+    return (result.stdout or '').strip()
+
+
+def run_rc(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode, (result.stdout or '').strip(), (result.stderr or '').strip()
+
+
+def is_ancestor(commit: str, ancestor_of: str, cwd: str | None = None) -> bool:
+    rc, _, _ = run_rc(
+        ['git', 'merge-base', '--is-ancestor', commit, ancestor_of],
+        cwd=cwd,
+    )
+    return rc == 0
+
+
+def detect_base(cwd: str | None = None) -> str:
+    symbolic = run(
+        ['git', 'symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
+        cwd=cwd,
+        check=False,
+    )
+    if symbolic.startswith('refs/remotes/origin/'):
+        return symbolic.rsplit('/', 1)[-1]
+    for candidate in ('main', 'master'):
+        rc, _, _ = run_rc(
+            ['git', 'show-ref', '--verify', '--quiet', f'refs/remotes/origin/{candidate}'],
+            cwd=cwd,
+        )
+        if rc == 0:
+            return candidate
+    raise CleanupError('could not detect origin base branch (main/master)')
+
+
+def parse_worktrees(cwd: str | None = None) -> list[dict]:
+    raw = run(['git', 'worktree', 'list', '--porcelain'], cwd=cwd)
+    worktrees: list[dict] = []
+    current: dict = {}
+    for line in raw.splitlines() + ['']:
+        if not line:
+            if current:
+                worktrees.append(current)
+                current = {}
+            continue
+        if line.startswith('worktree '):
+            current['path'] = line[len('worktree '):]
+        elif line.startswith('HEAD '):
+            current['head'] = line[len('HEAD '):]
+        elif line.startswith('branch '):
+            current['branch'] = line[len('branch '):].removeprefix('refs/heads/')
+        elif line == 'detached':
+            current['detached'] = True
+        elif line.startswith('prunable'):
+            current['prunable'] = True
+    return worktrees
+
+
+def worktree_dirty(path: str) -> bool | str:
+    rc, stdout, _ = run_rc(['git', '-C', path, 'status', '--porcelain'])
+    if rc != 0:
+        return 'unreadable'
+    return bool(stdout.strip())
+
+
+def porcelain_paths(path: str) -> list[str]:
+    rc, stdout, _ = run_rc(['git', '-C', path, 'status', '--porcelain', '-z'])
+    if rc != 0 or not stdout:
+        return []
+    entries = stdout.split('\0')
+    paths: list[str] = []
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        if not entry:
+            i += 1
+            continue
+        # "XY path" or "XY orig" followed by renamed path.
+        rel = entry[3:] if len(entry) > 3 else ''
+        code = entry[:2] if len(entry) >= 2 else ''
+        if 'R' in code or 'C' in code:
+            i += 1
+            if i < len(entries) and entries[i]:
+                rel = entries[i]
+        if rel:
+            paths.append(rel)
+        i += 1
+    return paths
+
+
+def file_matches_origin_base(path: str, rel: str, origin_base: str) -> bool:
+    worktree_file = Path(path) / rel
+    rc, origin_hash, _ = run_rc(
+        ['git', '-C', path, 'rev-parse', f'{origin_base}:{rel}'],
+    )
+    if rc != 0:
+        return False
+    if not worktree_file.is_file():
+        return False
+    rc, local_hash, _ = run_rc(['git', 'hash-object', str(worktree_file)])
+    return rc == 0 and local_hash == origin_hash
+
+
+def classify_dirty(path: str, origin_base: str) -> tuple[list[str], list[str]]:
+    catch_up: list[str] = []
+    unique: list[str] = []
+    for rel in porcelain_paths(path):
+        if file_matches_origin_base(path, rel, origin_base):
+            catch_up.append(rel)
+        else:
+            unique.append(rel)
+    return catch_up, unique
+
+
+def main_repo_root(cwd: str | None = None) -> str:
+    common = run(['git', 'rev-parse', '--git-common-dir'], cwd=cwd)
+    return str(Path(common).resolve().parent)
+
+
+def require_repo(cwd: str | None = None) -> None:
+    rc, _, _ = run_rc(['git', 'rev-parse', '--is-inside-work-tree'], cwd=cwd)
+    if rc != 0:
+        raise CleanupError('not a git repository')
+
+
+def fetch_origin(cwd: str | None = None) -> None:
+    rc, _, err = run_rc(['git', 'fetch', '--prune', 'origin'], cwd=cwd)
+    if rc != 0:
+        raise CleanupError(err or 'git fetch --prune origin failed')
+
+
+@dataclass
+class WorktreeInfo:
+    path: str
+    head: str
+    branch: str
+    detached: bool
+    prunable: bool
+    dirty: bool | str
+    merged: bool
+    is_current: bool
+    is_main_repo: bool
+
+
+@dataclass
+class BranchInfo:
+    name: str
+    sha: str
+    merged: bool
+    checked_out: bool
+    is_base: bool
+
+
+@dataclass
+class Classification:
+    base: str
+    origin_base: str
+    origin_sha: str
+    main_repo: str
+    current_path: str
+    current_branch: str
+    current_head: str
+    current_merged: bool
+    current_dirty: bool
+    ahead: list[str]
+    worktrees: list[WorktreeInfo]
+    branches: list[BranchInfo]
+
+
+@dataclass
+class Step:
+    action: str
+    detail: str
+    data: dict = field(default_factory=dict)
+
+
+@dataclass
+class Plan:
+    steps: list[Step] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+
+def classify(cwd: str | None = None) -> Classification:
+    require_repo(cwd)
+    base = detect_base(cwd)
+    origin_base = f'origin/{base}'
+    origin_sha = run(['git', 'rev-parse', origin_base], cwd=cwd)
+    current_path = run(['git', 'rev-parse', '--show-toplevel'], cwd=cwd)
+    current_branch = run(['git', 'branch', '--show-current'], cwd=cwd, check=False) or '(detached)'
+    current_head = run(['git', 'rev-parse', 'HEAD'], cwd=cwd)
+    ahead_raw = run(
+        ['git', 'log', '--oneline', f'{origin_base}..HEAD'],
+        cwd=cwd,
+        check=False,
+    )
+    ahead = [line for line in ahead_raw.splitlines() if line.strip()]
+    current_merged = is_ancestor(current_head, origin_base, cwd=cwd) and not ahead
+    current_dirty = bool(run(['git', 'status', '--porcelain'], cwd=cwd, check=False))
+    main_repo = main_repo_root(cwd)
+
+    worktrees: list[WorktreeInfo] = []
+    for wt in parse_worktrees(cwd):
+        path = wt.get('path', '')
+        head = wt.get('head', '')
+        branch = wt.get('branch') or ('(detached)' if wt.get('detached') else '(none)')
+        worktrees.append(
+            WorktreeInfo(
+                path=path,
+                head=head,
+                branch=branch,
+                detached=bool(wt.get('detached')),
+                prunable=bool(wt.get('prunable')),
+                dirty=worktree_dirty(path) if path else 'unreadable',
+                merged=is_ancestor(head, origin_base, cwd=cwd) if head else False,
+                is_current=Path(path).resolve() == Path(current_path).resolve(),
+                is_main_repo=Path(path).resolve() == Path(main_repo).resolve(),
+            )
+        )
+
+    checked_out = {wt.branch for wt in worktrees if wt.branch and not wt.detached}
+    branches: list[BranchInfo] = []
+    local_branches = [
+        line.strip()
+        for line in run(
+            ['git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads'],
+            cwd=cwd,
+        ).splitlines()
+        if line.strip()
+    ]
+    for name in local_branches:
+        sha = run(['git', 'rev-parse', '--verify', f'refs/heads/{name}'], cwd=cwd)
+        branches.append(
+            BranchInfo(
+                name=name,
+                sha=sha,
+                merged=is_ancestor(sha, origin_base, cwd=cwd),
+                checked_out=name in checked_out,
+                is_base=name == base,
+            )
+        )
+
+    return Classification(
+        base=base,
+        origin_base=origin_base,
+        origin_sha=origin_sha,
+        main_repo=main_repo,
+        current_path=current_path,
+        current_branch=current_branch,
+        current_head=current_head,
+        current_merged=current_merged,
+        current_dirty=current_dirty,
+        ahead=ahead,
+        worktrees=worktrees,
+        branches=branches,
+    )
+
+
+def print_classification(info: Classification) -> None:
+    print(f'base: {info.base}')
+    print(f'origin_base: {info.origin_sha[:12]} ({info.origin_base})')
+    print(f'main_repo: {info.main_repo}')
+    print(f'current_workspace: {info.current_path}')
+    print(f'current_branch: {info.current_branch}')
+    print(f'current_head: {info.current_head[:12]}')
+    print(f'current_merged: {"yes" if info.current_merged else "no"}')
+    print(f'current_dirty: {"yes" if info.current_dirty else "no"}')
+    if info.ahead:
+        print('commits_not_on_base:')
+        for line in info.ahead:
+            print(f'  {line}')
+
+    print()
+    print('WORKTREES')
+    print(f'{"action":<8} {"merge":<9} {"dirty":<12} {"branch":<42} path')
+    for wt in info.worktrees:
+        dirty_label = (
+            'unreadable' if wt.dirty == 'unreadable'
+            else 'dirty' if wt.dirty
+            else 'clean'
+        )
+        if wt.is_current:
+            action, reason = 'KEEP', 'current workspace'
+        elif not wt.merged:
+            action, reason = 'KEEP', 'unmerged'
+        elif wt.dirty == 'unreadable' or wt.prunable:
+            action, reason = 'PRUNE', 'prunable' if wt.prunable else 'unreadable'
+        elif wt.dirty:
+            action, reason = 'INSPECT', 'merged+dirty'
+        else:
+            action, reason = 'REMOVE', 'merged'
+        print(
+            f'{action:<8} {"MERGED" if wt.merged else "UNMERGED":<9} '
+            f'{dirty_label:<12} {wt.branch:<42} {wt.path}  # {reason}'
+        )
+
+    print()
+    print('BRANCHES')
+    print(f'{"action":<8} {"merge":<9} name')
+    for br in info.branches:
+        if br.is_base:
+            action, reason = 'KEEP', 'base'
+        elif br.checked_out and not br.merged:
+            action, reason = 'KEEP', 'checked out, unmerged'
+        elif not br.merged:
+            action, reason = 'KEEP', 'unmerged'
+        elif br.checked_out:
+            action, reason = 'WAIT', 'merged but still checked out — remove worktree first'
+        else:
+            action, reason = 'DELETE', 'merged'
+        print(
+            f'{action:<8} {"MERGED" if br.merged else "UNMERGED":<9} '
+            f'{br.name}  # {reason}'
+        )
+
+
+def plan_prune(info: Classification) -> Plan:
+    plan = Plan()
+    origin_base = info.origin_base
+    will_switch = info.current_merged and info.current_branch != info.base
+
+    if info.current_dirty:
+        catch_up, unique = classify_dirty(info.current_path, origin_base)
+        if catch_up:
+            plan.steps.append(Step(
+                'restore',
+                f'restore catch-up files on current checkout ({len(catch_up)})',
+                {'path': info.current_path, 'files': catch_up, 'source': origin_base},
+            ))
+        if unique and will_switch:
+            plan.steps.append(Step(
+                'stash',
+                f'stash unique WIP leftover from {info.current_branch}',
+                {
+                    'path': info.current_path,
+                    'message': f'WIP leftover from {info.current_branch}',
+                },
+            ))
+        elif unique and will_switch is False and info.current_merged is False:
+            plan.notes.append(
+                f'keeping unique uncommitted work on unmerged {info.current_branch}'
+            )
+        elif unique and not will_switch:
+            plan.notes.append('unique uncommitted work stays on the current checkout')
+
+    if will_switch and info.current_dirty:
+        catch_up, unique = classify_dirty(info.current_path, origin_base)
+        if unique:
+            # Stash is already planned above; refuse switch only if we cannot stash.
+            pass
+
+    for wt in info.worktrees:
+        if wt.is_current or wt.is_main_repo:
+            continue
+        if wt.prunable or not Path(wt.path).exists():
+            plan.steps.append(Step(
+                'worktree_prune',
+                f'prune missing worktree {wt.path}',
+                {'path': info.main_repo},
+            ))
+            continue
+        if not wt.merged:
+            plan.notes.append(f'kept unmerged worktree {wt.path} ({wt.branch})')
+            continue
+        if wt.dirty == 'unreadable':
+            plan.notes.append(f'skipped unreadable worktree {wt.path}')
+            continue
+        if wt.dirty:
+            catch_up, unique = classify_dirty(wt.path, origin_base)
+            if unique:
+                plan.notes.append(
+                    f'skipped uniquely dirty merged worktree {wt.path} ({wt.branch})'
+                )
+                continue
+            if catch_up:
+                plan.steps.append(Step(
+                    'restore',
+                    f'restore catch-up files in {wt.path}',
+                    {'path': wt.path, 'files': catch_up, 'source': origin_base},
+                ))
+        plan.steps.append(Step(
+            'worktree_remove',
+            f'remove merged worktree {wt.path} ({wt.branch})',
+            {'path': wt.path, 'repo': info.main_repo},
+        ))
+
+    plan.steps.append(Step(
+        'worktree_prune',
+        'git worktree prune',
+        {'path': info.main_repo},
+    ))
+
+    if will_switch:
+        plan.steps.append(Step(
+            'checkout',
+            f'checkout {info.base}',
+            {'branch': info.base, 'path': info.main_repo},
+        ))
+        plan.steps.append(Step(
+            'pull_ff',
+            f'fast-forward {info.base} from origin',
+            {'branch': info.base, 'path': info.main_repo},
+        ))
+    elif info.current_branch == info.base:
+        plan.steps.append(Step(
+            'pull_ff',
+            f'fast-forward {info.base} from origin',
+            {'branch': info.base, 'path': info.main_repo},
+        ))
+    else:
+        plan.notes.append(
+            f'current branch {info.current_branch} is not fully merged; staying on it'
+        )
+
+    remaining_checked_out = set()
+    removed_paths = {
+        step.data.get('path')
+        for step in plan.steps
+        if step.action == 'worktree_remove'
+    }
+    for wt in info.worktrees:
+        if wt.path in removed_paths:
+            continue
+        if wt.detached:
+            continue
+        if wt.branch:
+            remaining_checked_out.add(wt.branch)
+    if will_switch:
+        remaining_checked_out.discard(info.current_branch)
+        remaining_checked_out.add(info.base)
+
+    for br in info.branches:
+        if br.is_base:
+            continue
+        if not br.merged:
+            plan.notes.append(f'kept unmerged branch {br.name}')
+            continue
+        if br.name in remaining_checked_out:
+            plan.notes.append(
+                f'kept merged branch {br.name} (still checked out in a worktree)'
+            )
+            continue
+        plan.steps.append(Step(
+            'branch_delete',
+            f'delete merged branch {br.name}',
+            {
+                'name': br.name,
+                'force': False,
+                'sha': br.sha,
+                'path': info.main_repo,
+                'origin_base': origin_base,
+            },
+        ))
+    return plan
+
+
+def plan_only_main(info: Classification, timestamp: str) -> Plan:
+    plan = Plan()
+    origin_base = info.origin_base
+
+    for wt in info.worktrees:
+        if wt.prunable or not Path(wt.path).exists():
+            plan.steps.append(Step(
+                'worktree_prune',
+                f'prune missing worktree {wt.path}',
+                {'path': info.main_repo},
+            ))
+            continue
+        if wt.dirty == 'unreadable':
+            plan.notes.append(f'skipped unreadable worktree {wt.path}')
+            continue
+        if wt.dirty:
+            catch_up, unique = classify_dirty(wt.path, origin_base)
+            if catch_up:
+                plan.steps.append(Step(
+                    'restore',
+                    f'restore catch-up files in {wt.path}',
+                    {'path': wt.path, 'files': catch_up, 'source': origin_base},
+                ))
+            if unique:
+                plan.steps.append(Step(
+                    'stash',
+                    f'stash unique WIP leftover from {wt.branch}',
+                    {
+                        'path': wt.path,
+                        'message': f'WIP leftover from {wt.branch}',
+                    },
+                ))
+
+    seen_backup_shas: set[str] = set()
+    for br in info.branches:
+        if br.is_base or br.merged:
+            continue
+        backup_ref = f'refs/backup/local-reset/{timestamp}/{br.name}'
+        plan.steps.append(Step(
+            'backup_ref',
+            f'backup unique {br.name} ({br.sha[:12]}) → {backup_ref}',
+            {'sha': br.sha, 'ref': backup_ref, 'path': info.main_repo},
+        ))
+        seen_backup_shas.add(br.sha)
+    for wt in info.worktrees:
+        if wt.merged or wt.head in seen_backup_shas:
+            continue
+        backup_ref = f'refs/backup/local-reset/{timestamp}/detached-{wt.head[:12]}'
+        plan.steps.append(Step(
+            'backup_ref',
+            f'backup unique HEAD {wt.head[:12]} ({wt.branch}) → {backup_ref}',
+            {'sha': wt.head, 'ref': backup_ref, 'path': info.main_repo},
+        ))
+        seen_backup_shas.add(wt.head)
+
+    for wt in info.worktrees:
+        if wt.is_main_repo:
+            continue
+        if wt.prunable or not Path(wt.path).exists():
+            continue
+        if wt.dirty == 'unreadable':
+            continue
+        plan.steps.append(Step(
+            'worktree_remove',
+            f'remove worktree {wt.path} ({wt.branch})',
+            {'path': wt.path, 'repo': info.main_repo},
+        ))
+
+    plan.steps.append(Step(
+        'worktree_prune',
+        'git worktree prune',
+        {'path': info.main_repo},
+    ))
+    plan.steps.append(Step(
+        'checkout',
+        f'checkout {info.base}',
+        {'branch': info.base, 'path': info.main_repo},
+    ))
+    plan.steps.append(Step(
+        'pull_ff',
+        f'fast-forward {info.base} from origin',
+        {'branch': info.base, 'path': info.main_repo},
+    ))
+
+    for br in info.branches:
+        if br.is_base:
+            continue
+        if br.merged:
+            plan.steps.append(Step(
+                'branch_delete',
+                f'delete merged branch {br.name}',
+                {
+                    'name': br.name,
+                    'force': False,
+                    'sha': br.sha,
+                    'path': info.main_repo,
+                    'origin_base': origin_base,
+                },
+            ))
+            continue
+        plan.steps.append(Step(
+            'branch_delete',
+            f'delete unmerged branch {br.name} after backup',
+            {
+                'name': br.name,
+                'force': True,
+                'sha': br.sha,
+                'path': info.main_repo,
+                'origin_base': origin_base,
+            },
+        ))
+    return plan
+
+
+def apply_step(step: Step, dry_run: bool) -> str:
+    if dry_run:
+        return f'dry-run: {step.detail}'
+    action = step.action
+    data = step.data
+    repo = data.get('repo') or data.get('path')
+    if action == 'restore':
+        files = data['files']
+        if files:
+            run(
+                ['git', '-C', data['path'], 'restore', f'--source={data["source"]}',
+                 '--worktree', '--staged', '--', *files],
+            )
+        return step.detail
+    if action == 'stash':
+        rc, out, err = run_rc(
+            ['git', '-C', data['path'], 'stash', 'push', '-u', '-m', data['message']],
+        )
+        combined = f'{out}\n{err}'.strip()
+        if rc != 0 and 'No local changes to save' in combined:
+            return f'nothing to stash at {data["path"]}'
+        if rc != 0:
+            raise CleanupError(combined or f'stash failed in {data["path"]}')
+        return f'stashed: {data["message"]}'
+    if action == 'worktree_remove':
+        path = data['path']
+        if Path(os.getcwd()).resolve() == Path(path).resolve():
+            raise CleanupError(f'refusing to remove the current directory {path}')
+        run(['git', 'worktree', 'remove', '--force', path], cwd=repo)
+        return step.detail
+    if action == 'worktree_prune':
+        run(['git', 'worktree', 'prune'], cwd=repo)
+        return step.detail
+    if action == 'checkout':
+        path = data['path']
+        rc, _, err = run_rc(['git', '-C', path, 'checkout', data['branch']])
+        if rc != 0:
+            rc2, _, err2 = run_rc(
+                ['git', '-C', path, 'checkout', '-f', data['branch']],
+            )
+            if rc2 != 0:
+                raise CleanupError(err2 or err or f'checkout {data["branch"]} failed')
+            return f'checked out {data["branch"]} (forced after catch-up dirty)'
+        return f'checked out {data["branch"]}'
+    if action == 'pull_ff':
+        run(
+            ['git', '-C', data['path'], 'pull', '--ff-only', 'origin', data['branch']],
+        )
+        return step.detail
+    if action == 'backup_ref':
+        run(['git', 'update-ref', data['ref'], data['sha']], cwd=repo)
+        return step.detail
+    if action == 'branch_delete':
+        name = data['name']
+        if data.get('force'):
+            run(['git', 'branch', '-D', name], cwd=repo)
+            return f'deleted {name} (backed up)'
+        rc, out, err = run_rc(['git', 'branch', '-d', name], cwd=repo)
+        if rc == 0:
+            return f'deleted {name}'
+        # -d checks merge into HEAD. If we already verified ancestry of
+        # origin/<base>, drop the ref rather than leaving a merged leftover.
+        sha = data.get('sha')
+        origin_base = data.get('origin_base')
+        if sha and origin_base and is_ancestor(sha, origin_base, cwd=repo):
+            run(['git', 'update-ref', '-d', f'refs/heads/{name}'], cwd=repo)
+            return f'deleted {name} (ancestry-verified ref delete)'
+        if sha and is_ancestor(sha, 'HEAD', cwd=repo):
+            run(['git', 'update-ref', '-d', f'refs/heads/{name}'], cwd=repo)
+            return f'deleted {name} (merged into HEAD)'
+        raise CleanupError(err or out or f'git branch -d {name} failed')
+    raise CleanupError(f'unknown step {action}')
+
+
+def apply_plan(plan: Plan, dry_run: bool, origin_base: str) -> list[str]:
+    results: list[str] = []
+    for step in plan.steps:
+        if step.action == 'branch_delete':
+            step.data.setdefault('origin_base', origin_base)
+        results.append(apply_step(step, dry_run=dry_run))
+    return results
+
+
+def print_plan(plan: Plan) -> None:
+    if plan.steps:
+        print()
+        print('PLAN')
+        for step in plan.steps:
+            print(f'  - {step.detail}')
+    if plan.notes:
+        print()
+        print('KEEP / NOTES')
+        for note in plan.notes:
+            print(f'  - {note}')
+
+
+def print_report(info: Classification, results: list[str], plan: Plan, dry_run: bool) -> None:
+    print()
+    print('RESULT' + (' (dry-run)' if dry_run else ''))
+    merged = 'fully merged' if info.current_merged else 'not fully merged'
+    print(f'  current branch: {info.current_branch} ({merged})')
+    stashes = [line for line in results if line.startswith('stashed:')]
+    if stashes:
+        print('  stashes:')
+        for line in stashes:
+            print(f'    {line}')
+    else:
+        print('  stashes: none')
+    print('  actions:')
+    if results:
+        for line in results:
+            print(f'    {line}')
+    else:
+        print('    nothing to do')
+    if plan.notes:
+        print('  kept:')
+        for note in plan.notes:
+            print(f'    {note}')
+    if not dry_run:
+        status = run(['git', 'status', '--short', '--branch'], cwd=info.main_repo)
+        print()
+        print('FINAL STATUS')
+        print(f'  cwd: {info.main_repo}')
+        for line in status.splitlines() or ['clean']:
+            print(f'  {line}')
+
+
+def confirm_only_main(plan: Plan, base: str, assume_yes: bool) -> None:
+    if assume_yes:
+        return
+    print()
+    print(f'This will leave only local branch `{base}`.')
+    print('Unique uncommitted work is stashed. Unique commits are backed up')
+    print('under refs/backup/local-reset/<timestamp>/ before branches are deleted.')
+    print('Remote branches are not touched.')
+    print_plan(plan)
+    if not sys.stdin.isatty():
+        raise CleanupError('refusing only-main without --yes (stdin is not a tty)')
+    try:
+        answer = input("Type 'only-main' to continue: ").strip()
+    except EOFError as exc:
+        raise CleanupError('refusing only-main without confirmation') from exc
+    if answer != 'only-main':
+        raise CleanupError('aborted')
+
+
+def cmd_classify(args: argparse.Namespace) -> int:
+    fetch_origin()
+    info = classify()
+    print_classification(info)
+    return 0
+
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    fetch_origin()
+    info = classify()
+    os.chdir(info.main_repo)
+    print_classification(info)
+    plan = plan_prune(info)
+    print_plan(plan)
+    results = apply_plan(plan, dry_run=args.dry_run, origin_base=info.origin_base)
+    print_report(info, results, plan, dry_run=args.dry_run)
+    return 0
+
+
+def cmd_only_main(args: argparse.Namespace) -> int:
+    fetch_origin()
+    info = classify()
+    os.chdir(info.main_repo)
+    print_classification(info)
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    plan = plan_only_main(info, timestamp=timestamp)
+    if args.dry_run:
+        print_plan(plan)
+        results = apply_plan(plan, dry_run=True, origin_base=info.origin_base)
+        print_report(info, results, plan, dry_run=True)
+        return 0
+    confirm_only_main(plan, info.base, assume_yes=args.yes)
+    results = apply_plan(plan, dry_run=False, origin_base=info.origin_base)
+    print_report(info, results, plan, dry_run=False)
+    print()
+    print('Recover unique commits with:')
+    print(f'  git checkout -b <branch> refs/backup/local-reset/{timestamp}/<branch>')
+    print('Recover unique WIP with: git stash list && git stash pop')
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='git-local-cleanup',
+        description='Prune merged git leftovers or reset a clone to only main/master.',
+    )
+    sub = parser.add_subparsers(dest='command', required=True)
+
+    classify_p = sub.add_parser('classify', help='show merge status of worktrees and branches')
+    classify_p.set_defaults(func=cmd_classify)
+
+    prune_p = sub.add_parser(
+        'prune',
+        help='remove merged worktrees/branches; checkout base if current HEAD is merged',
+    )
+    prune_p.add_argument('--dry-run', action='store_true', help='print actions without changing git state')
+    prune_p.set_defaults(func=cmd_prune)
+
+    only_p = sub.add_parser(
+        'only-main',
+        help='stash unique WIP, delete every other local branch/worktree, leave base',
+    )
+    only_p.add_argument('--dry-run', action='store_true', help='print actions without changing git state')
+    only_p.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help="skip the interactive 'only-main' confirmation",
+    )
+    only_p.set_defaults(func=cmd_only_main)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except CleanupError as exc:
+        print(f'git-local-cleanup: {exc}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -59,6 +59,8 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     __cheats_row "gca"           "git commit --amend --no-edit"
     __cheats_row "gst / gstp"    "git stash  /  git stash pop"
     __cheats_row "gwip"          "add -A && commit -m wip --no-verify"
+    __cheats_row "gprune"        "delete merged local branches/worktrees; checkout main if HEAD is merged"
+    __cheats_row "gonly-main"    "stash unique WIP, kill other local branches/worktrees, leave only main"
     echo ""
 
     echo $H"  PostgreSQL"$N$D" — pg.fish (interactive only, if *-17 installed)"$N

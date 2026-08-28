@@ -2,8 +2,16 @@
 
 Personal dotfiles: a modular fish config (`fish/conf.d/*.fish`, each auto-loaded
 on shell startup), plus `install.sh` (symlinks the fish modules into
-`~/.config/fish/conf.d/`) and `setup.sh` (server provisioning). See
-`fish/README.md` for the fish layout and install steps.
+`~/.config/fish/conf.d/` and `bin/` into `~/.local/bin/`) and `setup.sh`
+(server provisioning). See `fish/README.md` for the fish layout and install
+steps.
+
+Git cleanup commands (`gprune`, `gonly-main`) live in `fish/conf.d/git.fish` and
+call `bin/git-local-cleanup`. `gprune` only deletes worktrees/branches whose
+tip is an ancestor of `origin/main` (or `origin/master`). `gonly-main` is the
+nuclear option: it stashes unique uncommitted work, backs unique commits up
+under `refs/backup/local-reset/`, then leaves only the base branch. Never
+force-push; never delete remote branches.
 
 ## Security — never commit secrets (audit every commit)
 
