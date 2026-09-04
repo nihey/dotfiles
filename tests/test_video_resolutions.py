@@ -165,7 +165,7 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
         self.assert_probed(str(apple), str(linked), str(zebra), str(unicode_video))
 
     def test_defaults_to_scanning_current_directory(self) -> None:
-        self.create_video("current.mp4", (720, 480))
+        current = self.create_video("current.mp4", (720, 480))
 
         result = self.run_cli(cwd=self.work)
 
@@ -176,10 +176,10 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
             "----------  ----\n"
             "720x480     current.mp4\n",
         )
-        self.assert_probed("current.mp4")
+        self.assert_probed(str(current))
 
     def test_no_recursive_only_lists_immediate_videos(self) -> None:
-        self.create_video("immediate.mp4", (640, 480))
+        immediate = self.create_video("immediate.mp4", (640, 480))
         self.create_video("nested/hidden.mkv", (1920, 1080))
         (self.work / "unrelated.txt").write_text("ignore me")
 
@@ -192,7 +192,26 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
             "----------  ----\n"
             "640x480     immediate.mp4\n",
         )
-        self.assert_probed("immediate.mp4")
+        self.assert_probed(str(immediate))
+
+    def test_dash_prefixed_root_video_uses_absolute_probe_operand(self) -> None:
+        video = self.create_video("-clip.mp4", (640, 360))
+
+        for arguments in ((), ("--no-recursive",)):
+            with self.subTest(arguments=arguments):
+                if self.log.exists():
+                    self.log.unlink()
+
+                result = self.run_cli(*arguments, cwd=self.work)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    result.stdout,
+                    "Resolution  File\n"
+                    "----------  ----\n"
+                    "640x360     -clip.mp4\n",
+                )
+                self.assert_probed(str(video))
 
     def test_recognizes_exact_case_insensitive_extension_allowlist(self) -> None:
         supported: list[Path] = []
@@ -279,6 +298,52 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
                 self.assertIn("path is not a directory", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertEqual(self.calls(), [])
+
+    def test_unknown_user_path_reports_normalization_error_without_probing(
+        self,
+    ) -> None:
+        result = self.run_cli("~__video_resolutions_missing_user__/videos")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertTrue(
+            result.stderr.startswith(
+                "video-resolutions: could not resolve directory "
+            ),
+            result.stderr,
+        )
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_root_resolution_oserror_is_reported_without_probing(self) -> None:
+        resolution_error = PermissionError("simulated resolution failure")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        returncode: int | None = None
+        raised_error: OSError | None = None
+
+        try:
+            with (
+                mock.patch.object(Path, "resolve", side_effect=resolution_error),
+                mock.patch.object(sys, "argv", [str(SCRIPT), str(self.work)]),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+            ):
+                returncode = VIDEO_RESOLUTIONS.main()
+        except OSError as error:
+            raised_error = error
+
+        self.assertIsNone(raised_error, f"main raised {raised_error!r}")
+        self.assertEqual(returncode, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertTrue(
+            stderr.getvalue().startswith(
+                "video-resolutions: could not resolve directory "
+            ),
+            stderr.getvalue(),
+        )
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertEqual(self.calls(), [])
 
     def test_reports_recursive_traversal_errors_without_probing(self) -> None:
         blocked = self.work / "blocked"

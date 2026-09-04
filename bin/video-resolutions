@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -184,9 +185,32 @@ def main() -> int:
     if args.ascending and not args.sort_resolution:
         parser.error("--ascending requires --sort-resolution")
 
-    scan_directory = args.directory.expanduser()
-    directory = scan_directory.resolve()
-    if not directory.is_dir():
+    try:
+        directory = args.directory.expanduser().resolve()
+    except (OSError, RuntimeError) as error:
+        print(
+            f"video-resolutions: could not resolve directory "
+            f"{args.directory}: {error}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        directory_mode = directory.stat().st_mode
+    except FileNotFoundError:
+        print(
+            f"video-resolutions: {directory}: path is not a directory",
+            file=sys.stderr,
+        )
+        return 1
+    except (OSError, RuntimeError) as error:
+        print(
+            f"video-resolutions: could not access directory {directory}: {error}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not stat.S_ISDIR(directory_mode):
         print(
             f"video-resolutions: {directory}: path is not a directory",
             file=sys.stderr,
@@ -194,7 +218,7 @@ def main() -> int:
         return 1
 
     try:
-        candidates = discover_videos(scan_directory, not args.no_recursive)
+        candidates = discover_videos(directory, not args.no_recursive)
     except OSError as error:
         print(
             f"video-resolutions: could not scan directory {directory}: {error}",
