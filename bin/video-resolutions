@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -76,7 +77,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def discover_videos(directory: Path, recursive: bool) -> list[tuple[Path, str]]:
-    entries = directory.rglob("*") if recursive else directory.iterdir()
+    if recursive:
+        def raise_scan_error(error: OSError) -> None:
+            raise error
+
+        entries = (
+            Path(root) / filename
+            for root, _, filenames in os.walk(
+                directory,
+                onerror=raise_scan_error,
+                followlinks=False,
+            )
+            for filename in filenames
+        )
+    else:
+        entries = directory.iterdir()
     videos = [
         (path, str(path.relative_to(directory)))
         for path in entries
@@ -101,6 +116,8 @@ def probe_video(ffprobe: str, video: Path, relative_path: str) -> VideoInfo:
                 str(video),
             ],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=False,
         )

@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -10,10 +14,18 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bin" / "video-resolutions"
+SCRIPT_LOADER = importlib.machinery.SourceFileLoader("video_resolutions", str(SCRIPT))
+SCRIPT_SPEC = importlib.util.spec_from_loader(SCRIPT_LOADER.name, SCRIPT_LOADER)
+if SCRIPT_SPEC is None or SCRIPT_SPEC.loader is None:
+    raise RuntimeError(f"could not load {SCRIPT}")
+VIDEO_RESOLUTIONS = importlib.util.module_from_spec(SCRIPT_SPEC)
+sys.modules[SCRIPT_SPEC.name] = VIDEO_RESOLUTIONS
+SCRIPT_SPEC.loader.exec_module(VIDEO_RESOLUTIONS)
 FFPROBE_ARGS = [
     "-v",
     "error",
@@ -71,6 +83,9 @@ dimensions = json.loads(os.environ["FAKE_FFPROBE_DIMENSIONS"])
 probe_result = dimensions[str(Path(sys.argv[-1]).resolve())]
 if probe_result == "fail":
     print("simulated probe failure", file=sys.stderr)
+    raise SystemExit(7)
+if probe_result == "invalid-bytes":
+    sys.stderr.buffer.write(b"\\xffsimulated invalid bytes\\n")
     raise SystemExit(7)
 if probe_result == "malformed":
     print("not json")
@@ -265,6 +280,38 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertEqual(self.calls(), [])
 
+    def test_reports_recursive_traversal_errors_without_probing(self) -> None:
+        blocked = self.work / "blocked"
+        scan_error = PermissionError(13, "Permission denied", str(blocked))
+
+        def failing_walk(
+            directory: Path,
+            *,
+            onerror: object,
+            followlinks: bool,
+        ) -> list[object]:
+            self.assertEqual(directory, self.work)
+            self.assertFalse(followlinks)
+            assert callable(onerror)
+            onerror(scan_error)
+            return []
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch("os.walk", side_effect=failing_walk),
+            mock.patch.object(sys, "argv", [str(SCRIPT), str(self.work)]),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            returncode = VIDEO_RESOLUTIONS.main()
+
+        self.assertNotEqual(returncode, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("could not scan directory", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertEqual(self.calls(), [])
+
     def test_rejects_ascending_without_resolution_sorting(self) -> None:
         result = self.run_cli("--ascending", cwd=self.work)
 
@@ -303,16 +350,18 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
         }
         for relative_path, probe_result in failures.items():
             self.create_video(relative_path, probe_result)
+        self.create_video("aaa-small-valid.mp4", (640, 360))
         self.create_video("valid.mp4", (1920, 1080))
 
-        result = self.run_cli(str(self.work))
+        result = self.run_cli("--sort-resolution", str(self.work))
 
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(
             result.stdout,
             "Resolution  File\n"
             "----------  ----\n"
-            "1920x1080   valid.mp4\n",
+            "1920x1080   valid.mp4\n"
+            "640x360     aaa-small-valid.mp4\n",
         )
         for relative_path in failures:
             self.assertIn(
@@ -332,6 +381,25 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
             "video-resolutions: warning: nested/broken.mp4:", result.stderr
         )
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_invalid_probe_bytes_warn_and_do_not_stop_valid_results(self) -> None:
+        invalid = self.create_video("a-invalid.mp4", "invalid-bytes")
+        valid = self.create_video("z-valid.mp4", (1280, 720))
+
+        result = self.run_cli(str(self.work))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            "Resolution  File\n"
+            "----------  ----\n"
+            "1280x720    z-valid.mp4\n",
+        )
+        self.assertIn(
+            "video-resolutions: warning: a-invalid.mp4:", result.stderr
+        )
+        self.assertNotIn("Traceback", result.stderr)
+        self.assert_probed(str(invalid), str(valid))
 
 
 if __name__ == "__main__":
