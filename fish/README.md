@@ -30,6 +30,27 @@ like conda / gcloud) and lives outside this repo.
 - `conf.d/pg.fish` — interactive-only `psql` / `createdb` / `createuser`
   shadows pointing at the `-17` binaries when present.
 - `conf.d/anaconda.fish` — adds `~/anaconda3/bin` to `PATH` if it exists.
+- `../bin/extract-frames` — portable `ffmpeg` wrapper that extracts one PNG
+  frame per requested timestamp.
+
+## Extract video frames
+
+`extract-frames` accepts a video followed by one or more timestamps. Without
+an output option it writes lossless PNG files into the current directory:
+
+```sh
+extract-frames video.mp4 00:01 00:05.500 01:20
+```
+
+Use `-o` or `--output` to select a directory. Missing directories are created:
+
+```sh
+extract-frames video.mp4 10 25.5 --output ./selected-frames
+```
+
+Output names include the video stem, timestamp position, and timestamp, such
+as `video-frame-001-00-01.png`. The command requires `python3` and `ffmpeg` on
+`PATH`.
 
 ## Install
 
