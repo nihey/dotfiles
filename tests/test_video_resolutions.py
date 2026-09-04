@@ -200,6 +200,46 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
         self.assertIn("--sort-resolution", result.stdout)
         self.assertEqual(self.calls(), [])
 
+    def test_sorts_by_resolution_descending_with_paths_breaking_ties(self) -> None:
+        self.create_video("z-wide.mp4", (1920, 1080))
+        self.create_video("a-wide.mp4", (1920, 1080))
+        self.create_video("portrait.mp4", (1080, 1920))
+        self.create_video("small.mp4", (1280, 720))
+
+        result = self.run_cli("--sort-resolution", cwd=self.work)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split(maxsplit=1) for line in result.stdout.splitlines()[2:]]
+        self.assertEqual(
+            rows,
+            [
+                ["1920x1080", "a-wide.mp4"],
+                ["1920x1080", "z-wide.mp4"],
+                ["1080x1920", "portrait.mp4"],
+                ["1280x720", "small.mp4"],
+            ],
+        )
+
+    def test_sorts_by_resolution_ascending_with_paths_breaking_ties(self) -> None:
+        self.create_video("z-wide.mp4", (1920, 1080))
+        self.create_video("a-wide.mp4", (1920, 1080))
+        self.create_video("portrait.mp4", (1080, 1920))
+        self.create_video("small.mp4", (1280, 720))
+
+        result = self.run_cli("--sort-resolution", "--ascending", cwd=self.work)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split(maxsplit=1) for line in result.stdout.splitlines()[2:]]
+        self.assertEqual(
+            rows,
+            [
+                ["1280x720", "small.mp4"],
+                ["1080x1920", "portrait.mp4"],
+                ["1920x1080", "a-wide.mp4"],
+                ["1920x1080", "z-wide.mp4"],
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

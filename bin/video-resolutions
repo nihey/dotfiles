@@ -62,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="sort videos by resolution",
     )
+    parser.add_argument(
+        "--ascending",
+        action="store_true",
+        help="sort resolution from smallest to largest",
+    )
     return parser
 
 
@@ -97,6 +102,18 @@ def probe_video(ffprobe: str, video: Path, relative_path: str) -> VideoInfo:
     return VideoInfo(relative_path, stream["width"], stream["height"])
 
 
+def sort_by_resolution(
+    videos: list[VideoInfo], ascending: bool
+) -> list[VideoInfo]:
+    def sort_key(video: VideoInfo) -> tuple[int, int, int, str, str]:
+        dimensions = (video.width * video.height, video.width, video.height)
+        if not ascending:
+            dimensions = tuple(-value for value in dimensions)
+        return (*dimensions, video.relative_path.casefold(), video.relative_path)
+
+    return sorted(videos, key=sort_key)
+
+
 def print_table(videos: list[VideoInfo]) -> None:
     resolution_width = max(
         len("Resolution"), *(len(video.resolution) for video in videos)
@@ -119,6 +136,8 @@ def main() -> int:
         probe_video(ffprobe, path, relative_path)
         for path, relative_path in candidates
     ]
+    if args.sort_resolution:
+        videos = sort_by_resolution(videos, args.ascending)
     print_table(videos)
     return 0
 
