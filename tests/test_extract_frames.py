@@ -144,6 +144,76 @@ Path(sys.argv[-1]).write_bytes(b"fake png")
         self.assertIn("timestamp", result.stdout.lower())
         self.assertEqual(self.calls(), [])
 
+    def test_rejects_missing_input_before_calling_ffmpeg(self) -> None:
+        missing = self.work / "missing.mp4"
+        result = self.run_cli(str(missing), "1")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("input video is not a file", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_rejects_missing_timestamps(self) -> None:
+        result = self.run_cli(str(self.video))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at least one timestamp is required", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_rejects_invalid_timestamps_before_creating_output(self) -> None:
+        invalid_values = ("-1", "abc", "1:60", "60:00", "1:60:00", "1:2:3:4")
+        for position, value in enumerate(invalid_values):
+            with self.subTest(timestamp=value):
+                output = self.root / f"invalid-{position}" / "frames"
+                result = self.run_cli(
+                    str(self.video), value, "--output", str(output)
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"invalid timestamp: {value}", result.stderr)
+                self.assertFalse(output.exists())
+        self.assertEqual(self.calls(), [])
+
+    def test_reports_missing_ffmpeg_without_a_traceback(self) -> None:
+        result = self.run_cli(
+            str(self.video),
+            "1",
+            env_changes={"PATH": ""},
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ffmpeg was not found on PATH", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_stops_on_ffmpeg_failure_and_keeps_completed_frames(self) -> None:
+        result = self.run_cli(
+            str(self.video),
+            "1",
+            "2",
+            "3",
+            env_changes={"FAKE_FFMPEG_FAIL_TIMESTAMP": "2"},
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ffmpeg failed at timestamp 2", result.stderr)
+        self.assertIn("simulated ffmpeg failure", result.stderr)
+        self.assertTrue((self.work / "sample clip-frame-001-1.png").is_file())
+        self.assertFalse((self.work / "sample clip-frame-002-2.png").exists())
+        self.assertFalse((self.work / "sample clip-frame-003-3.png").exists())
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_reports_output_directory_creation_failure(self) -> None:
+        output_file = self.root / "not-a-directory"
+        output_file.write_text("occupied")
+        result = self.run_cli(
+            str(self.video), "1", "--output", str(output_file)
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot create output directory", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
