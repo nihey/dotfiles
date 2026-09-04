@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Extract PNG frames from a video at one or more timestamps."""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+from pathlib import Path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="extract-frames",
+        description="Extract one PNG video frame at each timestamp.",
+    )
+    parser.add_argument("video", help="input video file")
+    parser.add_argument(
+        "timestamps",
+        nargs="+",
+        metavar="timestamp",
+        help="seconds, MM:SS, or HH:MM:SS (fractions allowed)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output directory (default: current directory)",
+    )
+    return parser
+
+
+def frame_name(video: Path, position: int, timestamp: str) -> str:
+    safe_timestamp = timestamp.replace(":", "-")
+    return f"{video.stem}-frame-{position:03d}-{safe_timestamp}.png"
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    video = Path(args.video).expanduser()
+    output_dir = (args.output or Path.cwd()).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for position, timestamp in enumerate(args.timestamps, start=1):
+        destination = output_dir / frame_name(video, position, timestamp)
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                timestamp,
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                str(destination),
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            return result.returncode
+        print(destination)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
