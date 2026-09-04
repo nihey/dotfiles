@@ -32,6 +32,8 @@ like conda / gcloud) and lives outside this repo.
 - `conf.d/anaconda.fish` — adds `~/anaconda3/bin` to `PATH` if it exists.
 - `../bin/extract-frames` — portable `ffmpeg` wrapper that extracts one PNG
   frame per requested timestamp.
+- `../bin/video-resolutions` — portable `ffprobe` wrapper that lists video
+  dimensions and optionally sorts by resolution.
 
 ## Extract video frames
 
@@ -51,6 +53,37 @@ extract-frames video.mp4 10 25.5 --output ./selected-frames
 Output names include the video stem, timestamp position, and timestamp, such
 as `video-frame-001-00-01.png`. The command requires `python3` and `ffmpeg` on
 `PATH`.
+
+## List video resolutions
+
+`video-resolutions` recursively lists supported videos and the dimensions of
+their first video stream. The directory defaults to the current directory:
+
+```sh
+video-resolutions
+video-resolutions ~/Videos
+```
+
+Use `--no-recursive` to inspect only the selected directory:
+
+```sh
+video-resolutions ~/Videos --no-recursive
+```
+
+Results are ordered alphabetically by default. To sort by resolution instead,
+use `--sort-resolution`; resolution sorting uses total pixel area and lists the
+largest videos first by default. Add `--ascending` for smallest-first order:
+
+```sh
+video-resolutions ~/Videos --sort-resolution
+video-resolutions ~/Videos --sort-resolution --ascending
+```
+
+Supported extensions are matched case-insensitively: `.3gp`, `.avi`, `.flv`,
+`.m2ts`, `.m4v`, `.mkv`, `.mov`, `.mp4`, `.mpeg`, `.mpg`, `.mts`, `.ts`,
+`.webm`, and `.wmv`. Unprobeable files produce warnings while valid results
+remain in the output, but any warning makes the command exit nonzero. The
+command requires `python3` and `ffprobe` on `PATH`.
 
 ## Install
 
