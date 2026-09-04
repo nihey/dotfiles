@@ -52,7 +52,7 @@ class VideoResolutionsTest(unittest.TestCase):
         self.fake_bin = self.root / "bin"
         self.fake_bin.mkdir()
         self.log = self.root / "ffprobe.jsonl"
-        self.dimensions: dict[str, list[int]] = {}
+        self.dimensions: dict[str, list[object] | str] = {}
         self._write_fake_ffprobe()
 
     def _write_fake_ffprobe(self) -> None:
@@ -68,7 +68,17 @@ with Path(os.environ["FAKE_FFPROBE_LOG"]).open("a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
 
 dimensions = json.loads(os.environ["FAKE_FFPROBE_DIMENSIONS"])
-width, height = dimensions[str(Path(sys.argv[-1]).resolve())]
+probe_result = dimensions[str(Path(sys.argv[-1]).resolve())]
+if probe_result == "fail":
+    print("simulated probe failure", file=sys.stderr)
+    raise SystemExit(7)
+if probe_result == "malformed":
+    print("not json")
+    raise SystemExit(0)
+if probe_result == "empty":
+    print(json.dumps({{"streams": []}}))
+    raise SystemExit(0)
+width, height = probe_result
 print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
 """
         )
@@ -77,12 +87,14 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
     def create_video(
         self,
         relative_path: str,
-        dimensions: tuple[int, int] = (1920, 1080),
+        dimensions: tuple[object, object] | str = (1920, 1080),
     ) -> Path:
         video = self.work / relative_path
         video.parent.mkdir(parents=True, exist_ok=True)
         video.write_bytes(b"not a real video")
-        self.dimensions[str(video.resolve())] = list(dimensions)
+        self.dimensions[str(video.resolve())] = (
+            dimensions if isinstance(dimensions, str) else list(dimensions)
+        )
         return video
 
     def run_cli(
@@ -239,6 +251,87 @@ print(json.dumps({{"streams": [{{"width": width, "height": height}}]}}))
                 ["1920x1080", "z-wide.mp4"],
             ],
         )
+
+    def test_rejects_paths_that_are_not_directories_without_probing(self) -> None:
+        regular_file = self.root / "regular-file"
+        regular_file.write_text("not a directory")
+
+        for invalid_path in (self.root / "missing", regular_file):
+            with self.subTest(path=invalid_path):
+                result = self.run_cli(str(invalid_path))
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("path is not a directory", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(self.calls(), [])
+
+    def test_rejects_ascending_without_resolution_sorting(self) -> None:
+        result = self.run_cli("--ascending", cwd=self.work)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--ascending requires --sort-resolution", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_reports_missing_ffprobe_without_a_traceback(self) -> None:
+        self.create_video("candidate.mp4")
+
+        env = os.environ.copy()
+        env["PATH"] = ""
+        env["FAKE_FFPROBE_LOG"] = str(self.log)
+        env["FAKE_FFPROBE_DIMENSIONS"] = json.dumps(self.dimensions)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), str(self.work)],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ffprobe was not found on PATH", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_warns_for_bad_probes_and_prints_only_valid_rows(self) -> None:
+        failures: dict[str, tuple[object, object] | str] = {
+            "command-failure.mp4": "fail",
+            "empty-streams.mp4": "empty",
+            "malformed-json.mp4": "malformed",
+            "string-width.mp4": ("1920", 1080),
+            "zero-width.mp4": (0, 1080),
+        }
+        for relative_path, probe_result in failures.items():
+            self.create_video(relative_path, probe_result)
+        self.create_video("valid.mp4", (1920, 1080))
+
+        result = self.run_cli(str(self.work))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            "Resolution  File\n"
+            "----------  ----\n"
+            "1920x1080   valid.mp4\n",
+        )
+        for relative_path in failures:
+            self.assertIn(
+                f"video-resolutions: warning: {relative_path}:", result.stderr
+            )
+        self.assertIn("simulated probe failure", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_failed_only_candidate_prints_no_table(self) -> None:
+        self.create_video("nested/broken.mp4", "fail")
+
+        result = self.run_cli(str(self.work))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn(
+            "video-resolutions: warning: nested/broken.mp4:", result.stderr
+        )
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":

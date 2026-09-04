@@ -7,6 +7,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,10 @@ VIDEO_EXTENSIONS = {
     ".webm",
     ".wmv",
 }
+
+
+class ProbeError(Exception):
+    """An expected failure while reading a video's resolution."""
 
 
 @dataclass(frozen=True)
@@ -81,25 +86,57 @@ def discover_videos(directory: Path, recursive: bool) -> list[tuple[Path, str]]:
 
 
 def probe_video(ffprobe: str, video: Path, relative_path: str) -> VideoInfo:
-    result = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height",
-            "-of",
-            "json",
-            str(video),
-        ],
-        text=True,
-        capture_output=True,
-        check=True,
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "json",
+                str(video),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as error:
+        raise ProbeError(f"could not run ffprobe: {error}") from error
+
+    if result.returncode:
+        detail = result.stderr.strip() or f"ffprobe exited with status {result.returncode}"
+        raise ProbeError(detail)
+
+    try:
+        output = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ProbeError(f"ffprobe returned malformed JSON: {error.msg}") from error
+
+    if not isinstance(output, dict):
+        raise ProbeError("ffprobe output does not contain a streams list")
+    streams = output.get("streams")
+    if not isinstance(streams, list) or not streams:
+        raise ProbeError("ffprobe output does not contain a video stream")
+    stream = streams[0]
+    if not isinstance(stream, dict):
+        raise ProbeError("ffprobe returned an invalid video stream")
+
+    dimensions: dict[str, int] = {}
+    for name in ("width", "height"):
+        value = stream.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ProbeError(f"ffprobe returned an invalid {name}")
+        dimensions[name] = value
+
+    return VideoInfo(
+        relative_path,
+        dimensions["width"],
+        dimensions["height"],
     )
-    stream = json.loads(result.stdout)["streams"][0]
-    return VideoInfo(relative_path, stream["width"], stream["height"])
 
 
 def sort_by_resolution(
@@ -125,21 +162,54 @@ def print_table(videos: list[VideoInfo]) -> None:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
-    candidates = discover_videos(args.directory, not args.no_recursive)
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.ascending and not args.sort_resolution:
+        parser.error("--ascending requires --sort-resolution")
+
+    scan_directory = args.directory.expanduser()
+    directory = scan_directory.resolve()
+    if not directory.is_dir():
+        print(
+            f"video-resolutions: {directory}: path is not a directory",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        candidates = discover_videos(scan_directory, not args.no_recursive)
+    except OSError as error:
+        print(
+            f"video-resolutions: could not scan directory {directory}: {error}",
+            file=sys.stderr,
+        )
+        return 1
     if not candidates:
         print("No videos found.")
         return 0
 
     ffprobe = shutil.which("ffprobe")
-    videos = [
-        probe_video(ffprobe, path, relative_path)
-        for path, relative_path in candidates
-    ]
+    if ffprobe is None:
+        print("video-resolutions: ffprobe was not found on PATH", file=sys.stderr)
+        return 1
+
+    videos: list[VideoInfo] = []
+    probe_failed = False
+    for path, relative_path in candidates:
+        try:
+            videos.append(probe_video(ffprobe, path, relative_path))
+        except ProbeError as error:
+            print(
+                f"video-resolutions: warning: {relative_path}: {error}",
+                file=sys.stderr,
+            )
+            probe_failed = True
+
     if args.sort_resolution:
         videos = sort_by_resolution(videos, args.ascending)
-    print_table(videos)
-    return 0
+    if videos:
+        print_table(videos)
+    return 1 if probe_failed else 0
 
 
 if __name__ == "__main__":
