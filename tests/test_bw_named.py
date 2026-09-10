@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Subprocess tests for bw-quickfiller / bw-kassellabs."""
+"""Subprocess tests for bw-quickfiller / bw-kassellabs / bw-nihey."""
 
 from __future__ import annotations
 
@@ -33,8 +33,10 @@ class BwNamedTest(unittest.TestCase):
         self._write_fake_bw()
         self.quickfiller = self.root / "bw-quickfiller"
         self.kassellabs = self.root / "bw-kassellabs"
+        self.nihey = self.root / "bw-nihey"
         self.quickfiller.symlink_to(PROFILE_SCRIPT)
         self.kassellabs.symlink_to(PROFILE_SCRIPT)
+        self.nihey.symlink_to(PROFILE_SCRIPT)
 
     def _write_fake_bw(self) -> None:
         fake = self.fake_bin / "bw"
@@ -94,6 +96,7 @@ Path({str(self.log)!r}).write_text(
         text = self.source_text()
         self.assertNotIn("kassellabs.io", text)
         self.assertNotIn("quickfiller.org", text)
+        self.assertNotIn("nihey.org", text)
 
     def test_missing_server_url_fails_without_calling_bw(self) -> None:
         result = self.run_named(self.quickfiller, "status")
@@ -112,9 +115,20 @@ Path({str(self.log)!r}).write_text(
             str(self.config / "bw-quickfiller"),
         )
 
-    def test_kassellabs_uses_default_bw_appdata(self) -> None:
+    def test_kassellabs_uses_dedicated_appdata(self) -> None:
         self.write_server("kassellabs", "https://example.test/other")
         result = self.run_named(self.kassellabs, "status")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        called = self.last_bw()
+        self.assertEqual(called["argv"], ["status"])
+        self.assertEqual(
+            called["appdata"],
+            str(self.config / "bw-kassellabs"),
+        )
+
+    def test_nihey_uses_default_bw_appdata(self) -> None:
+        self.write_server("nihey", "https://example.test/personal")
+        result = self.run_named(self.nihey, "status")
         self.assertEqual(result.returncode, 0, result.stderr)
         called = self.last_bw()
         self.assertEqual(called["argv"], ["status"])
@@ -185,12 +199,23 @@ Path({str(self.log)!r}).open("a").write(
         self.assertEqual(called["argv"], ["config", "server", "https://example.test/vault"])
         self.assertEqual(called["appdata"], str(self.config / "bw-quickfiller"))
 
-    def test_kassellabs_configures_default_bw_profile(self) -> None:
+    def test_kassellabs_configures_dedicated_appdata(self) -> None:
         result = self.configure("kassellabs", "https://example.test/other")
         self.assertEqual(result.returncode, 0, result.stderr)
         called = json.loads(self.log.read_text().splitlines()[-1])
         self.assertEqual(called["argv"], ["config", "server", "https://example.test/other"])
+        self.assertEqual(called["appdata"], str(self.config / "bw-kassellabs"))
+
+    def test_nihey_configures_default_bw_profile(self) -> None:
+        result = self.configure("nihey", "https://example.test/personal")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        called = json.loads(self.log.read_text().splitlines()[-1])
+        self.assertEqual(called["argv"], ["config", "server", "https://example.test/personal"])
         self.assertIsNone(called["appdata"])
+
+    def test_install_sh_configures_nihey_profile(self) -> None:
+        install = (ROOT / "install.sh").read_text()
+        self.assertIn("bw_profile_configure nihey", install)
 
     def test_does_not_overwrite_existing_server(self) -> None:
         directory = self.config / "bw-quickfiller"

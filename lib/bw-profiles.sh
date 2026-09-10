@@ -12,7 +12,7 @@ bw_profile_configure() {
   local home server_file
 
   case "$profile" in
-    quickfiller | kassellabs) ;;
+    quickfiller | kassellabs | nihey) ;;
     *)
       echo "bw_profile_configure: unknown profile: $profile" >&2
       return 2
@@ -57,7 +57,7 @@ bw_profile_configure() {
 
   local bw_out=""
   local bw_status=0
-  if [[ "$profile" == "kassellabs" ]]; then
+  if [[ "$profile" == "nihey" ]]; then
     bw_out="$(env -u BITWARDENCLI_APPDATA_DIR bw config server "$url" 2>&1)" || bw_status=$?
   else
     bw_out="$(BITWARDENCLI_APPDATA_DIR="$home/bw-$profile" bw config server "$url" 2>&1)" || bw_status=$?

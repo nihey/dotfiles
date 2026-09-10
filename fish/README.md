@@ -89,11 +89,12 @@ command requires `python3` and `ffprobe` on `PATH`.
 
 ## Bitwarden CLI profiles
 
-`bw-kassellabs` uses the default Bitwarden CLI profile (same session as
-plain `bw`). `bw-quickfiller` uses an isolated data directory. Both accept
-the same arguments as `bw`:
+`bw-nihey` uses the default Bitwarden CLI profile (same session as
+plain `bw`). `bw-kassellabs` and `bw-quickfiller` use isolated data
+directories. All three accept the same arguments as `bw`:
 
 ```sh
+bw-nihey status
 bw-kassellabs status
 bw-quickfiller login
 bw-quickfiller list items
@@ -115,8 +116,9 @@ Run the installer from the repo root:
 It symlinks each module into `~/.config/fish/conf.d/` and each `bin/`
 executable into `~/.local/bin/`. Safe to re-run: `env.local.fish` is never
 touched, and existing regular files are skipped (only symlinks are replaced).
-On first install it prompts for the `bw-kassellabs` and `bw-quickfiller`
-server URLs and stores them only under `~/.config/bw-<profile>/` (not in git).
+On first install it prompts for the `bw-nihey`, `bw-kassellabs`, and
+`bw-quickfiller` server URLs and stores them only under
+`~/.config/bw-<profile>/` (not in git).
 Re-runs skip the prompt when that file already exists.
 Or do it manually:
 

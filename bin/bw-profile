@@ -6,8 +6,9 @@ name="$(basename -- "$0")"
 case "$name" in
   bw-quickfiller) profile="quickfiller" ;;
   bw-kassellabs) profile="kassellabs" ;;
+  bw-nihey) profile="nihey" ;;
   *)
-    echo "$name: use bw-quickfiller or bw-kassellabs" >&2
+    echo "$name: use bw-nihey, bw-quickfiller, or bw-kassellabs" >&2
     exit 2
     ;;
 esac
@@ -20,7 +21,7 @@ if [[ ! -s "$server_file" ]]; then
   exit 1
 fi
 
-if [[ "$profile" == "kassellabs" ]]; then
+if [[ "$profile" == "nihey" ]]; then
   unset BITWARDENCLI_APPDATA_DIR
 else
   export BITWARDENCLI_APPDATA_DIR="$config_home/bw-$profile"

@@ -52,5 +52,6 @@ done
 # under ~/.config/bw-<profile>/ (untracked).
 # shellcheck source=lib/bw-profiles.sh
 source "$DOTFILES_DIR/lib/bw-profiles.sh"
+bw_profile_configure nihey
 bw_profile_configure quickfiller
 bw_profile_configure kassellabs
