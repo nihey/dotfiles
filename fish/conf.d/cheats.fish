@@ -39,6 +39,8 @@ function cheats --description 'Show custom shell commands from this dotfiles set
     __cheats_row "dytv <url>"    "yt-dlp, remuxed to mp4"
     __cheats_row "extract-frames <video>" "PNG frames at timestamps; -o selects/creates output dir"
     __cheats_row "video-resolutions [dir]" "list video dimensions; --sort-resolution [--ascending]"
+    __cheats_row "bw-kassellabs" "Bitwarden CLI (default vault; URL set at install)"
+    __cheats_row "bw-quickfiller" "Bitwarden CLI (Quickfiller vault; URL set at install)"
     __cheats_row "randstr [N=32]" "random alphanumeric string of length N"
     echo ""
 

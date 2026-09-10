@@ -4,7 +4,8 @@
 #
 # Safe to re-run. Never touches env.local.fish (the untracked machine-local
 # layer holding secrets/env vars) and never overwrites a regular file — only
-# symlinks are replaced.
+# symlinks are replaced. First-time Bitwarden wrapper setup prompts for server
+# URLs and writes them under ~/.config/bw-<profile>/ only.
 set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +37,7 @@ for src in "$DOTFILES_DIR"/bin/*; do
     [ -f "$src" ] || continue
     name="$(basename "$src")"
     case "$name" in
-        test_*|*.pyc|*.md) continue ;;
+        test_*|*.pyc|*.md|bw-profile) continue ;;
     esac
     dest="$BIN_DEST/$name"
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then
@@ -46,3 +47,10 @@ for src in "$DOTFILES_DIR"/bin/*; do
     chmod +x "$src"
     ln -sfv "$src" "$dest"
 done
+
+# Named Bitwarden CLI wrappers. Server URLs are prompted and stored only
+# under ~/.config/bw-<profile>/ (untracked).
+# shellcheck source=lib/bw-profiles.sh
+source "$DOTFILES_DIR/lib/bw-profiles.sh"
+bw_profile_configure quickfiller
+bw_profile_configure kassellabs

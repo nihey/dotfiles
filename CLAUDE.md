@@ -6,6 +6,10 @@ on shell startup), plus `install.sh` (symlinks the fish modules into
 (server provisioning). See `fish/README.md` for the fish layout and install
 steps.
 
+Named Bitwarden CLI wrappers (`bw-kassellabs`, `bw-quickfiller`) are installed
+by `install.sh`, which prompts for each server URL and writes it only under
+`~/.config/bw-<profile>/`. Never put those URLs in a tracked file.
+
 Git cleanup commands (`gprune`, `gonly-main`) live in `fish/conf.d/git.fish` and
 call `bin/git-local-cleanup`. `gprune` only deletes worktrees/branches whose
 tip is an ancestor of `origin/main` (or `origin/master`). `gonly-main` is the

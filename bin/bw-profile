@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Named Bitwarden CLI wrappers. Server URLs are machine-local (set by install.sh).
+set -euo pipefail
+
+name="$(basename -- "$0")"
+case "$name" in
+  bw-quickfiller) profile="quickfiller" ;;
+  bw-kassellabs) profile="kassellabs" ;;
+  *)
+    echo "$name: use bw-quickfiller or bw-kassellabs" >&2
+    exit 2
+    ;;
+esac
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+server_file="$config_home/bw-$profile/server"
+
+if [[ ! -s "$server_file" ]]; then
+  echo "$name: server URL is not configured. Re-run dotfiles install.sh to set it." >&2
+  exit 1
+fi
+
+if [[ "$profile" == "kassellabs" ]]; then
+  unset BITWARDENCLI_APPDATA_DIR
+else
+  export BITWARDENCLI_APPDATA_DIR="$config_home/bw-$profile"
+fi
+
+exec bw "$@"

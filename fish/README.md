@@ -34,6 +34,8 @@ like conda / gcloud) and lives outside this repo.
   frame per requested timestamp.
 - `../bin/video-resolutions` — portable `ffprobe` wrapper that lists video
   dimensions and optionally sorts by resolution.
+- `../bin/bw-kassellabs` / `../bin/bw-quickfiller` — Bitwarden CLI wrappers
+  with separate local profiles. Server URLs are prompted by `install.sh`.
 
 ## Extract video frames
 
@@ -85,6 +87,23 @@ Supported extensions are matched case-insensitively: `.3gp`, `.avi`, `.flv`,
 remain in the output, but any warning makes the command exit nonzero. The
 command requires `python3` and `ffprobe` on `PATH`.
 
+## Bitwarden CLI profiles
+
+`bw-kassellabs` uses the default Bitwarden CLI profile (same session as
+plain `bw`). `bw-quickfiller` uses an isolated data directory. Both accept
+the same arguments as `bw`:
+
+```sh
+bw-kassellabs status
+bw-quickfiller login
+bw-quickfiller list items
+```
+
+Server URLs are not stored in this repo. `./install.sh` prompts for each
+one and writes `~/.config/bw-<profile>/server` (mode 600). Re-running
+install leaves an existing URL alone; delete that file to be prompted again.
+The commands require `bw` on `PATH`.
+
 ## Install
 
 Run the installer from the repo root:
@@ -96,6 +115,9 @@ Run the installer from the repo root:
 It symlinks each module into `~/.config/fish/conf.d/` and each `bin/`
 executable into `~/.local/bin/`. Safe to re-run: `env.local.fish` is never
 touched, and existing regular files are skipped (only symlinks are replaced).
+On first install it prompts for the `bw-kassellabs` and `bw-quickfiller`
+server URLs and stores them only under `~/.config/bw-<profile>/` (not in git).
+Re-runs skip the prompt when that file already exists.
 Or do it manually:
 
 ```fish
