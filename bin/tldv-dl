@@ -125,7 +125,7 @@ def download_video(mid, out_base, workers):
 
 def save_transcript(data, out_base, srt_only=False):
     if not data:
-        print("No transcript available.")
+        print("No transcript available for this meeting.", file=sys.stderr)
         return
     sec = lambda t: int(t["seconds"]) + t.get("nanos", 0) / 1e9
     hms = lambda s: f"{int(s // 3600):02d}:{int(s % 3600 // 60):02d}:{int(s % 60):02d}"
@@ -179,6 +179,18 @@ def main():
         save_transcript((info.get("video", {}).get("transcript") or {}).get("data"), out_base, args.srt_only)
     if not args.no_video:
         download_video(mid, out_base, args.workers)
+
+    # Fail loudly (non-zero exit) if anything that was requested is missing or empty.
+    expected = []
+    if not args.no_video:
+        expected.append(".mp4")
+    if not args.no_transcript:
+        expected += [".srt"] if args.srt_only else [".srt", ".txt", ".transcript.json"]
+    missing = [ext for ext in expected
+               if not Path(f"{out_base}{ext}").exists() or Path(f"{out_base}{ext}").stat().st_size == 0]
+    if missing:
+        sys.exit(f"Missing output(s): {', '.join(missing)}")
+    print(f"Done: {', '.join(expected)}")
 
 
 if __name__ == "__main__":

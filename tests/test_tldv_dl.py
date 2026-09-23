@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +69,30 @@ class TldvDlTest(unittest.TestCase):
             TLDV.save_transcript([[word(" Oi", 0, 1)]], base, srt_only=True)
             self.assertTrue(Path(f"{base}.srt").exists())
             self.assertFalse(Path(f"{base}.txt").exists())
+
+    def test_main_fails_when_transcript_missing(self):
+        info = {"meeting": {"name": "Call", "duration": 60}, "video": {"transcript": {"data": []}}}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(TLDV, "fetch", return_value=json.dumps(info).encode()), \
+                mock.patch.object(sys, "argv", ["tldv-dl", "6ab3064e32651100137c93da", "--no-video", "-o", tmp]):
+            with self.assertRaises(SystemExit) as ctx:
+                TLDV.main()
+            self.assertIn(".srt", str(ctx.exception.code))
+
+    def test_main_writes_video_and_transcript_by_default(self):
+        info = {"meeting": {"name": "Call", "duration": 60},
+                "video": {"transcript": {"data": [[word(" Oi", 0, 1)]]}}}
+
+        def fake_video(mid, out_base, workers):
+            Path(f"{out_base}.mp4").write_bytes(b"video")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(TLDV, "fetch", return_value=json.dumps(info).encode()), \
+                mock.patch.object(TLDV, "download_video", side_effect=fake_video), \
+                mock.patch.object(sys, "argv", ["tldv-dl", "6ab3064e32651100137c93da", "-o", tmp]):
+            TLDV.main()
+            for ext in (".mp4", ".srt", ".txt", ".transcript.json"):
+                self.assertGreater(Path(tmp, f"Call{ext}").stat().st_size, 0, ext)
 
 
 if __name__ == "__main__":

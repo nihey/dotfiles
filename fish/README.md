@@ -73,6 +73,8 @@ tldv-dl <id> --no-transcript -j 32  # video only, 32 parallel segment downloads
 tl;dv's playlist lines are letter-shifted; the script detects the shift, fetches
 the HLS segments in parallel and remuxes them to MP4 without re-encoding. It
 needs `python3` and `ffmpeg` on `PATH`, and works without a TTY (cron, SSH).
+By default it saves both the video and the transcript, and exits non-zero if
+any requested output is missing (e.g. the meeting has no transcript yet).
 
 ## List video resolutions
 
