@@ -34,6 +34,8 @@ like conda / gcloud) and lives outside this repo.
   frame per requested timestamp.
 - `../bin/video-resolutions` — portable `ffprobe` wrapper that lists video
   dimensions and optionally sorts by resolution.
+- `../bin/tldv-dl` — downloads a public tl;dv meeting recording (MP4) and its
+  transcript (SRT/TXT/JSON). Headless: plain HTTP + `ffmpeg`, no browser.
 - `../bin/bw-kassellabs` / `../bin/bw-quickfiller` — Bitwarden CLI wrappers
   with separate local profiles. Server URLs are prompted by `install.sh`.
 
@@ -55,6 +57,22 @@ extract-frames video.mp4 10 25.5 --output ./selected-frames
 Output names include the video stem, timestamp position, and timestamp, such
 as `video-frame-001-00-01.png`. The command requires `python3` and `ffmpeg` on
 `PATH`.
+
+## Download tl;dv meetings
+
+`tldv-dl` takes a public tl;dv meeting URL (or its 24-character id) and saves
+`<title>.mp4`, `<title>.srt`, `<title>.txt` and `<title>.transcript.json`:
+
+```sh
+tldv-dl https://tldv.io/app/meetings/<id>/
+tldv-dl <id> -o ~/Videos/tldv       # choose the output directory
+tldv-dl <id> --srt-only             # only the subtitles
+tldv-dl <id> --no-transcript -j 32  # video only, 32 parallel segment downloads
+```
+
+tl;dv's playlist lines are letter-shifted; the script detects the shift, fetches
+the HLS segments in parallel and remuxes them to MP4 without re-encoding. It
+needs `python3` and `ffmpeg` on `PATH`, and works without a TTY (cron, SSH).
 
 ## List video resolutions
 

@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Download a public tl;dv meeting recording (MP4) and its transcript (TXT/SRT/JSON).
+
+Usage:
+  tldv-dl <meeting-url-or-id> [-o DIR] [-j WORKERS] [--no-video] [--no-transcript] [--srt-only]
+
+Headless: pure HTTP + ffmpeg, no browser or login needed (meeting must be public).
+Outputs <title>.mp4, <title>.srt, <title>.txt, <title>.transcript.json
+
+How it works:
+  - Metadata + transcript: GET gw.tldv.io/v1/meetings/<id>/watch-page
+  - Playlist: GET gaia.tldv.io/v1/meetings/<id>/playlist.m3u8 (redirects to a signed playlist)
+  - Segment lines are obfuscated with a +N letter shift (digits untouched); the base URL
+    comes from the `#TLDVCONF:<expires>,<?>,<base-url>` header.
+  - Segments are fetched in parallel, concatenated, and remuxed to MP4 with ffmpeg (no re-encode).
+"""
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36"}
+SHIFT = 8  # tl;dv letter shift used in playlist lines
+
+
+def fetch(url, retries=5, timeout=60):
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+                return r.read()
+        except Exception:
+            if attempt == retries - 1:
+                raise
+
+
+def meeting_id(arg):
+    m = re.search(r"[0-9a-f]{24}", arg)
+    if not m:
+        sys.exit(f"Could not find a meeting id in: {arg}")
+    return m.group(0)
+
+
+def unshift(s, n):
+    out = []
+    for c in s:
+        if "a" <= c <= "z":
+            out.append(chr((ord(c) - 97 - n) % 26 + 97))
+        elif "A" <= c <= "Z":
+            out.append(chr((ord(c) - 65 - n) % 26 + 65))
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def detect_shift(line):
+    # Real segment names end in ".ts"; find the shift that turns the extension into "ts".
+    ext = line.split("?", 1)[0].rsplit(".", 1)[-1]
+    for n in range(26):
+        if unshift(ext, n) == "ts":
+            return n
+    return SHIFT
+
+
+def safe_name(title):
+    name = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", title).strip()
+    return re.sub(r"\s+", " ", name)[:150] or "tldv-meeting"
+
+
+def download_video(mid, out_base, workers):
+    if not shutil.which("ffmpeg"):
+        sys.exit("ffmpeg not found in PATH")
+    playlist = fetch(f"https://gaia.tldv.io/v1/meetings/{mid}/playlist.m3u8").decode()
+    lines = playlist.splitlines()
+    conf = next((l for l in lines if l.startswith("#TLDVCONF")), None)
+    if not conf:
+        sys.exit("Unexpected playlist format (no #TLDVCONF header). tl;dv may have changed its player.")
+    base = conf.split(",", 2)[2]
+    segs = [l for l in lines if l and not l.startswith("#")]
+    n = detect_shift(segs[0])
+    urls = [base + unshift(s, n) for s in segs]
+    total = len(urls)
+    print(f"Video: {total} segments, {workers} parallel downloads")
+
+    with tempfile.TemporaryDirectory(prefix="tldv-") as tmp:
+        tmp = Path(tmp)
+        done = 0
+
+        def get(i):
+            p = tmp / f"{i:06d}.ts"
+            p.write_bytes(fetch(urls[i]))
+            return i
+
+        with ThreadPoolExecutor(workers) as ex:
+            for f in as_completed([ex.submit(get, i) for i in range(total)]):
+                f.result()
+                done += 1
+                if sys.stdout.isatty():
+                    if done % 50 == 0 or done == total:
+                        print(f"\r  {done}/{total} segments ({done * 100 // total}%)", end="", flush=True)
+                elif done % 500 == 0 or done == total:  # headless: plain log lines
+                    print(f"  {done}/{total} segments ({done * 100 // total}%)", flush=True)
+        if sys.stdout.isatty():
+            print()
+
+        joined = tmp / "joined.ts"
+        with joined.open("wb") as out:
+            for i in range(total):
+                with (tmp / f"{i:06d}.ts").open("rb") as seg:
+                    shutil.copyfileobj(seg, out)
+
+        mp4 = Path(f"{out_base}.mp4")
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(joined),
+             "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart", str(mp4)],
+            check=True,
+        )
+    print(f"Saved {mp4}")
+
+
+def save_transcript(data, out_base, srt_only=False):
+    if not data:
+        print("No transcript available.")
+        return
+    sec = lambda t: int(t["seconds"]) + t.get("nanos", 0) / 1e9
+    hms = lambda s: f"{int(s // 3600):02d}:{int(s % 3600 // 60):02d}:{int(s % 60):02d}"
+    srt_ts = lambda s: f"{hms(s)},{int((s % 1) * 1000):03d}"
+
+    txt, cues = [], []
+    for block in data:
+        if not block:
+            continue
+        text = "".join(w["word"] for w in block).strip()
+        txt.append(f"[{hms(sec(block[0]['startTime']))}] {block[0].get('speaker', '')}: {text}")
+        for i in range(0, len(block), 12):
+            c = block[i:i + 12]
+            cues.append(f"{len(cues) + 1}\n{srt_ts(sec(c[0]['startTime']))} --> "
+                        f"{srt_ts(sec(c[-1]['endTime']))}\n{''.join(w['word'] for w in c).strip()}\n")
+
+    Path(f"{out_base}.srt").write_text("\n".join(cues), encoding="utf-8")
+    if srt_only:
+        print(f"Saved {out_base}.srt")
+        return
+    Path(f"{out_base}.txt").write_text("\n\n".join(txt) + "\n", encoding="utf-8")
+    Path(f"{out_base}.transcript.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Saved {out_base}.txt / .srt / .transcript.json")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Download a public tl;dv meeting video and transcript.")
+    ap.add_argument("meeting", help="tl;dv meeting URL or 24-char meeting id")
+    ap.add_argument("-o", "--output-dir", default=".", help="output directory (default: current)")
+    ap.add_argument("-j", "--workers", type=int, default=16, help="parallel segment downloads (default: 16)")
+    ap.add_argument("--no-video", action="store_true", help="skip the video")
+    ap.add_argument("--no-transcript", action="store_true", help="skip the transcript")
+    ap.add_argument("--srt-only", action="store_true", help="only download the transcript as .srt")
+    args = ap.parse_args()
+    if args.srt_only:
+        args.no_video = True
+
+    mid = meeting_id(args.meeting)
+    try:
+        info = json.loads(fetch(f"https://gw.tldv.io/v1/meetings/{mid}/watch-page?noTranscript=false"))
+    except Exception as e:
+        sys.exit(f"Could not load meeting {mid} (is it public?): {e}")
+
+    title = info["meeting"].get("name") or mid
+    print(f"Meeting: {title} ({info['meeting'].get('duration', 0) // 60} min)")
+    out_dir = Path(args.output_dir).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_base = out_dir / safe_name(title)
+
+    if not args.no_transcript:
+        save_transcript((info.get("video", {}).get("transcript") or {}).get("data"), out_base, args.srt_only)
+    if not args.no_video:
+        download_video(mid, out_base, args.workers)
+
+
+if __name__ == "__main__":
+    main()
