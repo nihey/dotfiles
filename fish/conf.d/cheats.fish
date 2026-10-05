@@ -48,7 +48,8 @@ function cheats --description 'Show custom shell commands from this dotfiles set
 
     echo $H"  Network"$N$D" — proxy.fish"$N
     __cheats_row "pchrome <host>"  "ssh SOCKS tunnel + isolated Chrome browsing through it"
-    __cheats_row "pchrome --fresh" "same, but throwaway profile (deleted on exit)"
+    __cheats_row "pchrome --anonymous" "Incognito + throwaway profile (also --incognito, -a, -i)"
+    __cheats_row "pchrome --fresh" "regular browsing + throwaway profile (deleted on exit)"
     echo ""
 
     echo $H"  Git"$N$D" — git.fish"$N

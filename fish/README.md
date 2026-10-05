@@ -21,8 +21,9 @@ like conda / gcloud) and lives outside this repo.
   the git repo root.
 - `conf.d/proxy.fish` — `pchrome <ssh-host>` opens an SSH SOCKS tunnel and
   launches a separate Chrome profile that browses through it (remote DNS, so
-  sites see the remote IP). Tunnel is torn down when Chrome exits; `--fresh`
-  uses a throwaway profile, `--port N` forces the local port.
+  sites see the remote IP). Tunnel is torn down when Chrome exits;
+  `--anonymous` opens Incognito with a throwaway profile, `--fresh` uses a
+  throwaway regular profile, and `--port N` forces the local port.
 - `conf.d/nvm-lazy.fish` — adds the nvm "default" node to `PATH` without
   sourcing `nvm.sh` on startup. The OMF `nvm` function still works on demand.
 - `conf.d/cheats.fish` — `cheats` prints a colored cheatsheet of every
@@ -38,6 +39,23 @@ like conda / gcloud) and lives outside this repo.
   transcript (SRT/TXT/JSON). Headless: plain HTTP + `ffmpeg`, no browser.
 - `../bin/bw-kassellabs` / `../bin/bw-quickfiller` — Bitwarden CLI wrappers
   with separate local profiles. Server URLs are prompted by `install.sh`.
+
+## Anonymous Chrome sessions
+
+Use `--anonymous` (or `-a`, `--incognito`, `-i`) to open an Incognito session
+through an SSH host:
+
+```fish
+pchrome --anonymous <ssh-host>
+pchrome --incognito --port 1080 <ssh-host> https://example.com
+```
+
+Each invocation starts with a separate temporary profile, without the saved
+logins or settings in `~/.cache/pchrome/<host>`. The temporary profile is
+deleted when the browser process exits. `--fresh` still opens a regular
+browser with a temporary profile; using no flag keeps the saved per-host
+profile. Anonymous mode uses the same SSH proxy and remote DNS; it provides
+local private browsing, not network anonymity.
 
 ## Extract video frames
 

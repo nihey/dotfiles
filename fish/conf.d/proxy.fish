@@ -1,14 +1,18 @@
 # SSH SOCKS proxy + an isolated Chrome that browses through it.
 #
-#   pchrome <host> [url...]     tunnel to <host>, open Chrome behind it
-#   pchrome --fresh <host>      throwaway profile (deleted on exit)
-#   pchrome --port 1080 <host>  force the local SOCKS port
+#   pchrome <host> [url...]        tunnel to <host>, open Chrome behind it
+#   pchrome --anonymous <host>    Incognito with a throwaway profile
+#   pchrome --fresh <host>        throwaway profile (deleted on exit)
+#   pchrome --port 1080 <host>     force the local SOCKS port
 #
 # The profile lives in ~/.cache/pchrome/<host> so logins survive between runs;
-# --fresh gives maximum isolation instead. DNS is resolved by the remote end
+# --fresh uses a disposable profile; --anonymous also enables Incognito.
+# DNS is resolved by the remote end
 # (--host-resolver-rules), so geo-DNS sees the remote IP, not yours.
 
 complete -c pchrome -n __fish_is_first_arg -x -a '(__fish_print_hostnames)'
+complete -c pchrome -s a -l anonymous -d 'Incognito with a throwaway profile, removed on exit'
+complete -c pchrome -s i -l incognito -d 'Alias for --anonymous'
 complete -c pchrome -s f -l fresh -d 'Throwaway profile, removed on exit'
 complete -c pchrome -s p -l port -x -d 'Local SOCKS port'
 complete -c pchrome -s h -l help -d 'Show usage'
@@ -27,19 +31,21 @@ function __pchrome_cleanup --on-event fish_exit
 end
 
 function pchrome --description 'SSH SOCKS tunnel + isolated Chrome through it'
-    argparse f/fresh p/port= h/help -- $argv
+    argparse a/anonymous i/incognito f/fresh p/port= h/help -- $argv
     or return 1
 
     if set -q _flag_help; or test (count $argv) -eq 0
-        echo "usage: pchrome [--fresh] [--port N] <ssh-host> [url...]"
+        echo "usage: pchrome [--anonymous | --incognito] [--fresh] [--port N] <ssh-host> [url...]"
         echo ""
-        echo "  --fresh      throwaway profile in a temp dir, removed on exit"
-        echo "  --port N     local SOCKS port (default: derived from the host name)"
+        echo "  -a, --anonymous  Incognito with a temp profile, removed on exit"
+        echo "  -i, --incognito  alias for --anonymous"
+        echo "  -f, --fresh      throwaway profile in a temp dir, removed on exit"
+        echo "  -p, --port N     local SOCKS port (default: derived from the host name)"
         echo ""
         echo "  <ssh-host> is anything ssh understands: an ~/.ssh/config alias,"
         echo "  user@host, or user@host with a -p port set in ssh config."
-        test (count $argv) -eq 0; and return 1
-        return 0
+        set -q _flag_help; and return 0
+        return 1
     end
 
     set -l host $argv[1]
@@ -121,11 +127,25 @@ function pchrome --description 'SSH SOCKS tunnel + isolated Chrome through it'
         end
     end
 
+    # Incognito also gets its own profile so it cannot reuse saved sessions.
+    set -l chrome_flags
+    if set -q _flag_anonymous; or set -q _flag_incognito
+        set -a chrome_flags --incognito
+    end
+
     # Profile directory.
     set -l profile
     set -l ephemeral 0
-    if set -q _flag_fresh
+    if set -q _flag_fresh; or set -q _flag_anonymous; or set -q _flag_incognito
         set profile (mktemp -d -t pchrome.XXXXXXXX)
+        or begin
+            echo "pchrome: could not create temporary profile" >&2
+            if test -n "$ssh_pid"
+                kill $ssh_pid 2>/dev/null
+                set -g __pchrome_ssh_pid (string match -v -- $ssh_pid $__pchrome_ssh_pid)
+            end
+            return 1
+        end
         set ephemeral 1
     else
         set -l slug (string replace -a -r '[^A-Za-z0-9._-]' '_' -- $host)
@@ -140,7 +160,9 @@ function pchrome --description 'SSH SOCKS tunnel + isolated Chrome through it'
         --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1" \
         --no-first-run \
         --no-default-browser-check \
+        $chrome_flags \
         $urls 2>/dev/null
+    set -l chrome_status $status
 
     # Teardown: only kill the tunnel we started ourselves.
     if test -n "$ssh_pid"
@@ -151,6 +173,7 @@ function pchrome --description 'SSH SOCKS tunnel + isolated Chrome through it'
         echo "pchrome: tunnel closed"
     end
     if test $ephemeral -eq 1
-        rm -rf $profile
+        rm -rf -- "$profile"
     end
+    return $chrome_status
 end
